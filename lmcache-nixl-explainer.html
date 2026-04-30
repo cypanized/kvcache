@@ -474,6 +474,12 @@
   .panel::-webkit-scrollbar, .tab-pane::-webkit-scrollbar, .overview::-webkit-scrollbar { width: 8px; height: 8px; }
   .panel::-webkit-scrollbar-thumb, .tab-pane::-webkit-scrollbar-thumb, .overview::-webkit-scrollbar-thumb { background: var(--vast-line); border-radius: 4px; }
 
+  /* Slide 4 (LMCache, in detail) — compact so all three panels fit inside the 900px canvas */
+  section[data-slide="5"] .panel { padding: 14px 18px; }
+  section[data-slide="5"] ul.checklist li { padding: 5px 0 5px 22px; font-size: 13px; line-height: 1.4; }
+  section[data-slide="5"] ul.checklist li::before { top: 5px; font-size: 14px; }
+  section[data-slide="5"] h3.section-h { font-size: 13px; }
+
   /* ===== YouTube thumbnail card ===== */
   .yt-thumb {
     position: relative;
@@ -892,7 +898,7 @@
       <p class="slide-sub">A cache layer at the inference engine that treats KV cache as a first-class, addressable, reusable artifact.</p>
     </div>
     <div class="slide-body">
-      <div class="grid-2">
+      <div class="grid-2" style="flex: 0 0 auto;">
         <div class="panel">
           <h3 class="section-h" style="font-size:16px;">What it is</h3>
           <ul class="checklist">
@@ -911,6 +917,27 @@
             <li>Supports multi-tenant policies through the lookup key (include tenant ID for isolation, omit it to share)</li>
           </ul>
         </div>
+      </div>
+      <div class="panel" style="display:flex; flex-direction:column; gap:10px; flex: 1 1 auto; min-height: 0;">
+        <h3 class="section-h" style="font-size:13px;">Tiering — where blocks actually live</h3>
+        <svg id="tier-svg" viewBox="0 0 1300 250" preserveAspectRatio="xMidYMid meet" style="width:100%; flex:1; min-height:0;"></svg>
+        <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:14px; font-size:12px; line-height:1.4;">
+          <div>
+            <span style="color:var(--vast-cyan); font-family:var(--fontmono); font-size:10px; text-transform:uppercase; letter-spacing:.12em; font-weight:700;">Insertion</span>
+            <p style="margin:2px 0 0;">Newly prefilled blocks land in the fastest tier with capacity.</p>
+          </div>
+          <div>
+            <span style="color:var(--vast-warn); font-family:var(--fontmono); font-size:10px; text-transform:uppercase; letter-spacing:.12em; font-weight:700;">Demotion · LRU</span>
+            <p style="margin:2px 0 0;">When a tier fills, least-recently-used blocks spill <em>down</em> via NIXL — not dropped.</p>
+          </div>
+          <div>
+            <span style="color:var(--vast-good); font-family:var(--fontmono); font-size:10px; text-transform:uppercase; letter-spacing:.12em; font-weight:700;">Promotion · on hit</span>
+            <p style="margin:2px 0 0;">Cold-tier hits get pulled back into GPU memory; warm-staying is configurable.</p>
+          </div>
+        </div>
+        <p style="margin:0; color:var(--vast-silver); font-size:11.5px; line-height:1.4;">
+          Placement is intentionally simple — <strong>recency + capacity</strong>. The smart parts are the prefix-hash lookup and NIXL's cross-tier movement. Operators tune capacity per tier, write-through behavior, chunk size, and tenant-key composition.
+        </p>
       </div>
     </div>
   </section>
@@ -1632,6 +1659,68 @@ function drawArch() {
   `;
 }
 drawArch();
+
+/* ==============================================================
+   04 — LMCache tier ladder (where blocks live)
+   ============================================================== */
+function drawTiering() {
+  const svg = $('#tier-svg');
+  if (!svg) return;
+  // viewBox 1300x250. Wider gaps so demote labels never overlap boxes.
+  const tiers = [
+    { name: 'GPU HBM',                  sub: 'fastest, smallest',  x: 40,  w: 200 },
+    { name: 'Host RAM',                 sub: '~10× larger',        x: 340, w: 200 },
+    { name: 'Local NVMe',               sub: '~10× larger',        x: 640, w: 200 },
+    { name: 'Remote · RDMA / Object',   sub: 'slowest, largest',   x: 940, w: 320 },
+  ];
+  let s = `
+    <defs>
+      <marker id="tArrW" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+        <path d="M0,0 L10,5 L0,10 z" fill="#ffb547"/>
+      </marker>
+      <marker id="tArrG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+        <path d="M0,0 L10,5 L0,10 z" fill="#5eead4"/>
+      </marker>
+    </defs>
+
+    <!-- Insertion arrow into GPU HBM -->
+    <line x1="140" y1="20" x2="140" y2="66" stroke="#5eead4" stroke-width="2.5" marker-end="url(#tArrG)"/>
+    <text x="150" y="38" font-size="14" fill="#5eead4" font-family="ui-monospace,monospace" font-weight="700">new prefilled blocks insert here</text>
+  `;
+  // tier boxes (y=70, h=80, bottom=150)
+  tiers.forEach(t => {
+    s += `
+      <rect x="${t.x}" y="70" width="${t.w}" height="80" rx="8" fill="rgba(0,212,255,0.10)" stroke="#00d4ff" stroke-width="2"/>
+      <text x="${t.x + t.w/2}" y="103" text-anchor="middle" font-size="17" fill="#fff" font-family="ui-monospace,monospace" font-weight="700">${t.name}</text>
+      <text x="${t.x + t.w/2}" y="126" text-anchor="middle" font-size="12" fill="#b8c5d4" font-family="ui-monospace,monospace">${t.sub}</text>
+    `;
+  });
+  // demote-LRU arrows between tiers (label split across two lines so it fits in the 100px gap)
+  for (let i = 0; i < tiers.length - 1; i++) {
+    const x1 = tiers[i].x + tiers[i].w;
+    const x2 = tiers[i+1].x;
+    const cx = (x1 + x2) / 2;
+    s += `
+      <line x1="${x1 + 6}" y1="110" x2="${x2 - 8}" y2="110" stroke="#ffb547" stroke-width="2.5" marker-end="url(#tArrW)"/>
+      <text x="${cx}" y="98" text-anchor="middle" font-size="12" fill="#ffb547" font-family="ui-monospace,monospace" font-weight="700">demote</text>
+      <text x="${cx}" y="130" text-anchor="middle" font-size="11" fill="#ffb547" font-family="ui-monospace,monospace">(LRU)</text>
+    `;
+  }
+  // evict drop after rightmost tier
+  const lastRight = tiers[tiers.length-1].x + tiers[tiers.length-1].w;
+  s += `
+    <line x1="${lastRight + 4}" y1="110" x2="${lastRight + 32}" y2="110" stroke="#ff6b6b" stroke-width="2" stroke-dasharray="3 2"/>
+    <text x="${lastRight + 14}" y="132" font-size="11" fill="#ff6b6b" font-family="ui-monospace,monospace" font-weight="700">evict</text>
+  `;
+  // promotion: curved arrow from cold tier back to GPU HBM (well below boxes)
+  s += `
+    <path d="M ${tiers[3].x + 100} 165 Q 660 235 ${tiers[0].x + tiers[0].w/2} 165"
+          stroke="#5eead4" stroke-width="2.5" fill="none" marker-end="url(#tArrG)"/>
+    <text x="650" y="240" text-anchor="middle" font-size="14" fill="#5eead4" font-family="ui-monospace,monospace" font-weight="700">promote back to GPU on cache hit (via NIXL)</text>
+  `;
+  svg.innerHTML = s;
+}
+drawTiering();
 
 function drawSeq() {
   const svg = $('#seq-svg');
