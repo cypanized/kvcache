@@ -1,0 +1,1997 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LMCache + NIXL — scaling KV caches for LLMs</title>
+<style>
+  :root {
+    --vast-deep-blue: #0a1628;
+    --vast-navy: #162a4a;
+    --vast-navy-2: #1c3358;
+    --vast-cyan: #00d4ff;
+    --vast-teal: #00a3cc;
+    --vast-white: #ffffff;
+    --vast-silver: #b8c5d4;
+    --vast-line: #234670;
+    --vast-warn: #ffb547;
+    --vast-bad:  #ff6b6b;
+    --vast-good: #5eead4;
+    --fontmono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --font: "Aptos Display", "Segoe UI", -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+    --fonth: "Aptos Display", "Arial Black", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    background: var(--vast-deep-blue);
+    color: var(--vast-white);
+    font-family: var(--font);
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 { font-family: var(--fonth); font-weight: 800; color: var(--vast-white); margin: 0; }
+  code, .mono { font-family: var(--fontmono); }
+  ::selection { background: rgba(0,212,255,.35); color: white; }
+
+  /* ============================================================
+     SCALING SYSTEM
+     We design everything at a fixed 1600×900 canvas, then scale
+     to fit any viewport. All sizes below are "design pixels".
+     ============================================================ */
+  .stage {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+    background: var(--vast-deep-blue);
+  }
+  .canvas {
+    width: 1600px;
+    height: 900px;
+    position: relative;
+    transform-origin: center center;
+    flex-shrink: 0;
+  }
+
+  /* ===== Top bar ===== */
+  .topbar {
+    position: absolute; top: 0; left: 0; right: 0; height: 60px;
+    background: rgba(10,22,40,.96);
+    border-bottom: 2px solid var(--vast-cyan);
+    display: flex; align-items: center; gap: 18px;
+    padding: 0 32px;
+  }
+  .topbar img { height: 30px; }
+  .topbar .vast-logo { height: 36px; width: auto; display: block; }
+  .topbar .crumb {
+    color: var(--vast-silver); font-family: var(--fontmono); font-size: 14px;
+    border-left: 1px solid var(--vast-line); padding-left: 18px;
+    text-transform: uppercase; letter-spacing: .14em;
+  }
+  .topbar .spacer { flex: 1; }
+  .topbar .counter {
+    font-family: var(--fontmono); color: var(--vast-cyan);
+    font-size: 15px; letter-spacing: .12em; font-weight: 600;
+  }
+  .topbar .progress {
+    height: 4px; background: var(--vast-line); border-radius: 2px;
+    width: 280px; overflow: hidden;
+  }
+  .topbar .progress > div {
+    height: 100%; background: linear-gradient(90deg, var(--vast-cyan), var(--vast-teal));
+    width: 0%; transition: width .3s ease;
+  }
+
+  /* ===== Bottom nav ===== */
+  .navbar {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 60px;
+    background: rgba(10,22,40,.96);
+    border-top: 1px solid var(--vast-line);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 32px;
+  }
+  .navbar .nav-btns { display: flex; gap: 10px; align-items: center; }
+  .navbar button {
+    background: transparent; border: 1px solid var(--vast-line);
+    color: var(--vast-silver); border-radius: 4px;
+    width: 38px; height: 38px; cursor: pointer; font-family: var(--fontmono);
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: all .15s ease; font-size: 16px;
+  }
+  .navbar button:hover { color: var(--vast-cyan); border-color: var(--vast-cyan); }
+  .dots { display: flex; gap: 10px; }
+  .dots .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--vast-line); cursor: pointer; transition: all .15s ease;
+  }
+  .dots .dot.on { background: var(--vast-cyan); box-shadow: 0 0 10px rgba(0,212,255,.6); transform: scale(1.2); }
+  .dots .dot:hover { background: var(--vast-teal); }
+  .hint { color: var(--vast-silver); font-family: var(--fontmono); font-size: 13px; }
+  .hint kbd {
+    font-family: var(--fontmono); font-size: 12px; padding: 2px 7px;
+    border: 1px solid var(--vast-line); border-bottom-width: 2px; border-radius: 3px;
+    background: var(--vast-navy); color: var(--vast-white); margin: 0 3px;
+  }
+
+  /* ===== Deck (slide area between topbar and navbar) ===== */
+  .deck {
+    position: absolute;
+    top: 60px; bottom: 60px;
+    left: 0; right: 0;
+    overflow: hidden;
+  }
+  .slide {
+    position: absolute; inset: 0;
+    padding: 36px 60px 32px;
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+    animation: slideIn .35s ease;
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(20px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  .slide.on { display: flex; }
+
+  .slide-head { margin-bottom: 20px; flex-shrink: 0; }
+  .slide-eyebrow {
+    font-family: var(--fontmono); font-size: 14px; letter-spacing: .2em;
+    color: var(--vast-cyan); text-transform: uppercase; font-weight: 600;
+  }
+  .slide-title {
+    font-size: 38px; margin-top: 6px; letter-spacing: -.01em; line-height: 1.15;
+  }
+  .slide-sub {
+    color: var(--vast-silver); font-size: 18px;
+    margin-top: 8px; max-width: 110ch;
+  }
+  .accent-bar {
+    width: 60px; height: 4px;
+    background: linear-gradient(90deg, var(--vast-cyan), var(--vast-teal));
+    margin-bottom: 14px;
+  }
+
+  .slide-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 18px; }
+  .grid-2     { display: grid; grid-template-columns: 1fr 1fr;  gap: 22px; flex: 1; min-height: 0; }
+  .grid-3-1   { display: grid; grid-template-columns: 3fr 2fr;  gap: 22px; flex: 1; min-height: 0; }
+  .grid-1-3   { display: grid; grid-template-columns: 2fr 3fr;  gap: 22px; flex: 1; min-height: 0; }
+  .stack { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+
+  .panel {
+    background: var(--vast-navy);
+    border: 1px solid var(--vast-line);
+    border-left: 4px solid var(--vast-cyan);
+    border-radius: 8px;
+    padding: 22px 26px;
+    overflow: auto;
+    min-height: 0;
+  }
+  .panel.bare { padding: 0; background: transparent; border: none; overflow: visible; }
+  .panel.dark {
+    background: var(--vast-deep-blue);
+    border-left-color: var(--vast-line);
+  }
+
+  /* ===== Title slide ===== */
+  .title-slide {
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 0 100px;
+  }
+  .title-slide .accent-bar { margin: 0 auto 28px; }
+  .title-slide h1 {
+    font-size: 84px; line-height: 1.05; letter-spacing: -.02em; margin-bottom: 28px;
+  }
+  .title-slide h1 .highlight {
+    background: linear-gradient(90deg, var(--vast-cyan), var(--vast-teal));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .title-slide .lede { color: var(--vast-silver); font-size: 24px; max-width: 80ch; margin: 0 auto; line-height: 1.5; }
+  .title-slide .start { margin-top: 44px; color: var(--vast-cyan); font-family: var(--fontmono); font-size: 16px; }
+  .title-slide .start kbd {
+    font-family: var(--fontmono); font-size: 14px; padding: 4px 12px;
+    border: 1px solid var(--vast-cyan); border-radius: 4px;
+    background: rgba(0,212,255,.08); margin: 0 5px;
+  }
+
+  /* ===== Definition cards ===== */
+  .def {
+    background: var(--vast-deep-blue);
+    border: 1px solid var(--vast-line);
+    border-radius: 8px;
+    padding: 24px 28px;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .def.prefill { border-top: 4px solid var(--vast-cyan); }
+  .def.decode  { border-top: 4px solid var(--vast-good); }
+  .def .tag {
+    display: inline-block; padding: 4px 12px; border-radius: 4px;
+    font-family: var(--fontmono); font-size: 12px; letter-spacing: .14em;
+    text-transform: uppercase; margin-bottom: 12px; align-self: flex-start; font-weight: 600;
+  }
+  .def.prefill .tag { background: rgba(0,212,255,.16); color: var(--vast-cyan); border: 1px solid var(--vast-cyan); }
+  .def.decode .tag  { background: rgba(94,234,212,.14); color: var(--vast-good); border: 1px solid var(--vast-good); }
+  .def h3 { color: var(--vast-white); font-size: 28px; margin: 0; letter-spacing: -.01em; }
+  .def .what { color: var(--vast-silver); margin: 10px 0 16px; font-size: 16px; line-height: 1.45; }
+  .def dl { margin: 0; display: grid; grid-template-columns: 100px 1fr; gap: 9px 18px; font-size: 15px; }
+  .def dt { color: var(--vast-cyan); font-family: var(--fontmono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; align-self: start; padding-top: 3px; font-weight: 600; }
+  .def dd { margin: 0; color: var(--vast-white); }
+
+  /* ===== Controls / pills / buttons ===== */
+  .controls { display: flex; flex-wrap: wrap; gap: 16px 26px; align-items: end; }
+  .control { display: flex; flex-direction: column; gap: 6px; min-width: 180px; flex: 1; }
+  .control label {
+    font-size: 12px; color: var(--vast-silver);
+    font-family: var(--fontmono); letter-spacing: .1em; text-transform: uppercase; font-weight: 600;
+  }
+  input[type="range"] { width: 100%; accent-color: var(--vast-cyan); background: transparent; height: 22px; }
+  input[type="range"]::-webkit-slider-runnable-track {
+    background: var(--vast-deep-blue); border: 1px solid var(--vast-line);
+    height: 6px; border-radius: 3px;
+  }
+  .pill {
+    display: inline-block;
+    font-family: var(--fontmono);
+    font-size: 13px; padding: 4px 11px; border-radius: 4px;
+    background: var(--vast-deep-blue); color: var(--vast-cyan);
+    border: 1px solid var(--vast-cyan); font-weight: 600;
+  }
+  .btn {
+    background: var(--vast-cyan); color: var(--vast-deep-blue);
+    font-weight: 700; padding: 10px 20px; border: none; border-radius: 4px;
+    cursor: pointer; font-family: var(--font);
+    transition: all .15s ease; font-size: 15px;
+  }
+  .btn:hover { background: var(--vast-teal); box-shadow: 0 0 16px rgba(0,212,255,.4); }
+  .btn-ghost {
+    background: transparent; color: var(--vast-cyan);
+    border: 1px solid var(--vast-cyan); padding: 9px 18px;
+    border-radius: 4px; cursor: pointer; font-family: var(--font); font-weight: 600;
+    transition: all .15s ease; font-size: 14px;
+  }
+  .btn-ghost:hover { background: rgba(0,212,255,.1); }
+
+  .toggles { display: inline-flex; background: var(--vast-deep-blue); border: 1px solid var(--vast-line); border-radius: 4px; overflow: hidden; flex-wrap: wrap; }
+  .toggles button {
+    background: transparent; color: var(--vast-silver); border: none;
+    padding: 9px 16px; font-family: var(--fontmono); font-size: 13px; cursor: pointer;
+    border-right: 1px solid var(--vast-line); font-weight: 600;
+  }
+  .toggles button:last-child { border-right: none; }
+  .toggles button.on { background: var(--vast-cyan); color: var(--vast-deep-blue); }
+
+  /* ===== Stat boxes ===== */
+  .stat-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 12px;
+  }
+  .stat-grid .box {
+    background: var(--vast-deep-blue); border: 1px solid var(--vast-line);
+    border-radius: 6px; padding: 12px 14px;
+  }
+  .stat-grid .v {
+    font-family: var(--fontmono); font-size: 22px; color: var(--vast-cyan);
+    font-weight: 700;
+  }
+  .stat-grid .k {
+    font-size: 11px; color: var(--vast-silver);
+    text-transform: uppercase; letter-spacing: .12em; margin-bottom: 4px; font-weight: 600;
+  }
+
+  /* ===== SVG ===== */
+  svg { display: block; max-width: 100%; height: auto; }
+
+  /* ===== Callout ===== */
+  .callout {
+    border-left: 4px solid var(--vast-cyan);
+    background: rgba(0,212,255,.08);
+    padding: 14px 18px; border-radius: 0 6px 6px 0;
+    color: var(--vast-white); font-size: 15px; line-height: 1.5;
+  }
+  .callout.warn { border-color: var(--vast-warn); background: rgba(255,181,71,.08); }
+  .callout.bad  { border-color: var(--vast-bad);  background: rgba(255,107,107,.08); }
+
+  /* ===== Token / prompt visualization ===== */
+  textarea {
+    width: 100%; background: var(--vast-deep-blue); color: var(--vast-white);
+    border: 1px solid var(--vast-line); border-radius: 4px; padding: 12px 14px;
+    font-family: var(--fontmono); font-size: 14px; resize: none; line-height: 1.5;
+  }
+  textarea:focus { outline: 2px solid var(--vast-cyan); outline-offset: -1px; border-color: var(--vast-cyan); }
+
+  .prompts { display: grid; gap: 8px; }
+  .prompt-row {
+    display: flex; align-items: stretch;
+    border: 1px solid var(--vast-line); border-radius: 4px; overflow: hidden;
+    background: var(--vast-deep-blue); font-family: var(--fontmono); font-size: 13px;
+  }
+  .prompt-row .label {
+    background: var(--vast-navy-2); color: var(--vast-silver);
+    padding: 8px 12px; border-right: 1px solid var(--vast-line);
+    min-width: 88px; text-align: center;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; letter-spacing: .1em; font-size: 12px;
+  }
+  .prompt-row.input .label { background: rgba(0,212,255,.15); color: var(--vast-cyan); }
+  .prompt-row .toks { display: flex; flex-wrap: wrap; padding: 8px 10px; gap: 4px; flex: 1; }
+  .tok {
+    padding: 3px 8px; border-radius: 3px; background: var(--vast-navy-2); color: var(--vast-white);
+    border: 1px solid var(--vast-line); font-size: 13px;
+  }
+  .tok.hit { background: rgba(0,212,255,.18); border-color: var(--vast-cyan); color: var(--vast-cyan); }
+
+  /* ===== Buffer / device list ===== */
+  .buffer-vis { background: var(--vast-deep-blue); border: 1px solid var(--vast-line); border-radius: 6px; padding: 16px 20px; }
+  .device-row {
+    display: grid; grid-template-columns: 130px 1fr;
+    gap: 14px; align-items: center; padding: 8px 0;
+    border-bottom: 1px dashed var(--vast-line);
+  }
+  .device-row:last-child { border-bottom: none; }
+  .device-row .name {
+    font-family: var(--fontmono); font-size: 13px;
+    color: var(--vast-silver); text-transform: uppercase; letter-spacing: .08em; font-weight: 600;
+  }
+  .chunks { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+  .chunk {
+    height: 18px; border-radius: 3px;
+    border: 1px solid rgba(255,255,255,.1);
+    transition: all .15s ease;
+  }
+  .chunk:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0,212,255,.4); }
+  .device-gpu { background: linear-gradient(135deg, #00d4ff, #00a3cc); }
+  .device-cpu { background: linear-gradient(135deg, #5eead4, #14b8a6); }
+  .device-ssd { background: linear-gradient(135deg, #ffb547, #f97316); }
+  .device-obj { background: linear-gradient(135deg, #c084fc, #8b5cf6); }
+  .device-net { background: linear-gradient(135deg, #ff6b9d, #ec4899); }
+
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; color: var(--vast-silver); align-items: center; }
+  .legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -1px; margin-right: 6px; }
+
+  /* ===== Tabs ===== */
+  .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--vast-line); flex-wrap: wrap; flex-shrink: 0; }
+  .tab {
+    background: transparent; color: var(--vast-silver); border: none;
+    padding: 10px 18px; font-family: var(--fontmono); font-size: 13px;
+    cursor: pointer; border-bottom: 3px solid transparent;
+    text-transform: uppercase; letter-spacing: .1em; font-weight: 600;
+  }
+  .tab:hover { color: var(--vast-white); }
+  .tab.on { color: var(--vast-cyan); border-bottom-color: var(--vast-cyan); }
+  .tab-pane { display: none; padding-top: 16px; flex: 1; min-height: 0; overflow: auto; }
+  .tab-pane.on { display: flex; flex-direction: column; gap: 14px; }
+
+  /* ===== Lists ===== */
+  ul.checklist { list-style: none; padding: 0; margin: 0; }
+  ul.checklist li {
+    padding: 10px 0 10px 28px; position: relative;
+    border-bottom: 1px solid var(--vast-line); font-size: 16px; line-height: 1.5;
+  }
+  ul.checklist li:last-child { border-bottom: none; }
+  ul.checklist li::before {
+    content: "▸"; color: var(--vast-cyan); position: absolute; left: 6px; top: 10px;
+    font-family: var(--fontmono); font-size: 16px;
+  }
+
+  pre {
+    margin: 0; background: var(--vast-deep-blue); padding: 16px; border-radius: 4px;
+    border: 1px solid var(--vast-line); color: var(--vast-silver);
+    font-size: 13px; overflow: auto; line-height: 1.5;
+  }
+  pre .k { color: var(--vast-cyan); }
+
+  /* ===== Overview mode ===== */
+  .overview {
+    position: absolute; inset: 0; background: rgba(10,22,40,.97);
+    z-index: 200; display: none; padding: 80px;
+    overflow: auto;
+  }
+  .overview.on { display: block; }
+  .overview h2 { font-size: 24px; margin-bottom: 24px; color: var(--vast-cyan); }
+  .overview-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+  }
+  .overview-card {
+    background: var(--vast-navy); border: 1px solid var(--vast-line);
+    border-radius: 8px; padding: 20px; cursor: pointer;
+    transition: all .15s ease; aspect-ratio: 16/9;
+    display: flex; flex-direction: column; justify-content: space-between;
+  }
+  .overview-card:hover { border-color: var(--vast-cyan); box-shadow: 0 0 20px rgba(0,212,255,.3); }
+  .overview-card .num { font-family: var(--fontmono); font-size: 13px; color: var(--vast-cyan); font-weight: 600; }
+  .overview-card .title { font-family: var(--fonth); font-size: 20px; line-height: 1.2; }
+  .overview-card .desc { font-size: 13px; color: var(--vast-silver); }
+
+  /* Section dividers within slides */
+  h3.section-h {
+    color: var(--vast-cyan); font-size: 13px; margin: 0 0 8px;
+    text-transform: uppercase; letter-spacing: .12em;
+    font-family: var(--fontmono); font-weight: 600;
+  }
+
+  /* Hide scrollbars (but keep scrollable) */
+  .panel::-webkit-scrollbar, .tab-pane::-webkit-scrollbar, .overview::-webkit-scrollbar { width: 8px; height: 8px; }
+  .panel::-webkit-scrollbar-thumb, .tab-pane::-webkit-scrollbar-thumb, .overview::-webkit-scrollbar-thumb { background: var(--vast-line); border-radius: 4px; }
+
+  /* ===== YouTube thumbnail card ===== */
+  .yt-thumb {
+    position: relative;
+    display: block;
+    width: 100%;
+    padding-top: 56.25%;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--vast-line);
+    background: #000;
+    cursor: pointer;
+    transition: border-color .15s ease, box-shadow .15s ease;
+    text-decoration: none;
+  }
+  .yt-thumb:hover {
+    border-color: var(--vast-cyan);
+    box-shadow: 0 0 32px rgba(0,212,255,.35);
+  }
+  .yt-thumb img {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    opacity: 0.92;
+    transition: opacity .15s ease;
+  }
+  .yt-thumb:hover img { opacity: 1; }
+  .yt-thumb .yt-play {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 80px; height: 56px;
+    background: rgba(0, 0, 0, 0.78);
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all .18s ease;
+  }
+  .yt-thumb:hover .yt-play {
+    background: var(--vast-cyan);
+    border-color: var(--vast-cyan);
+    box-shadow: 0 0 28px rgba(0,212,255,.7);
+    transform: translate(-50%, -50%) scale(1.08);
+  }
+  .yt-thumb .yt-play::after {
+    content: "";
+    width: 0; height: 0;
+    border-style: solid;
+    border-width: 12px 0 12px 20px;
+    border-color: transparent transparent transparent #fff;
+    margin-left: 4px;
+    transition: border-color .18s ease;
+  }
+  .yt-thumb:hover .yt-play::after {
+    border-color: transparent transparent transparent var(--vast-deep-blue);
+  }
+  .yt-thumb .yt-badge {
+    position: absolute;
+    bottom: 12px; right: 12px;
+    background: rgba(10, 22, 40, 0.85);
+    color: var(--vast-cyan);
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-family: var(--fontmono);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    border: 1px solid rgba(0, 212, 255, 0.4);
+  }
+  .yt-thumb .yt-meta {
+    position: absolute;
+    bottom: 12px; left: 12px; right: 80px;
+    background: rgba(10, 22, 40, 0.85);
+    color: var(--vast-white);
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-family: var(--font);
+    font-size: 12px;
+    border: 1px solid var(--vast-line);
+  }
+
+  /* ===== Mode toggle (in topbar) ===== */
+  .mode-toggle {
+    display: inline-flex;
+    background: var(--vast-deep-blue);
+    border: 1px solid var(--vast-line);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .mode-toggle button {
+    background: transparent;
+    color: var(--vast-silver);
+    border: none;
+    padding: 7px 14px;
+    font-family: var(--fontmono);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-right: 1px solid var(--vast-line);
+    transition: all .15s ease;
+  }
+  .mode-toggle button:last-child { border-right: none; }
+  .mode-toggle button:hover { color: var(--vast-cyan); }
+  .mode-toggle button.on {
+    background: var(--vast-cyan);
+    color: var(--vast-deep-blue);
+  }
+
+  /* ============================================================
+     SCROLL MODE — same horizontal slide layouts as present mode,
+     just stacked vertically. Each slide stays at the 1600×900
+     design canvas and is scaled per-frame.
+     ============================================================ */
+
+  /* .slide-frame wraps every slide (created at runtime).
+     In present mode it's invisible to layout; in scroll mode it
+     becomes a 16:9 box that contains one scaled slide. */
+  .slide-frame { display: contents; }
+
+  html.mode-scroll, html.mode-scroll body {
+    overflow: auto !important;
+    height: auto !important;
+  }
+  html.mode-scroll body { background: var(--vast-deep-blue); }
+
+  html.mode-scroll .stage {
+    position: static;
+    display: block;
+    overflow: visible;
+    width: 100%;
+    height: auto;
+    align-items: initial;
+    justify-content: initial;
+  }
+  html.mode-scroll .canvas {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    height: auto;
+    transform: none !important;
+    position: static;
+  }
+  html.mode-scroll .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  html.mode-scroll .navbar { display: none; }
+  html.mode-scroll .deck {
+    position: static;
+    top: auto; bottom: auto;
+    overflow: visible;
+  }
+
+  /* Each slide-frame becomes the layout container for one scaled slide */
+  html.mode-scroll .slide-frame {
+    display: block;
+    position: relative;
+    width: 100%;
+    max-width: 1600px;
+    margin: 0 auto;
+    aspect-ratio: 1600 / 900;
+    overflow: hidden;
+    border-bottom: 1px solid var(--vast-line);
+  }
+  html.mode-scroll .slide-frame:last-child { border-bottom: none; }
+
+  /* Each slide stays at design size; transform is applied per-frame by JS */
+  html.mode-scroll .slide {
+    position: absolute !important;
+    top: 0; left: 0;
+    width: 1600px !important;
+    height: 900px !important;
+    inset: auto;
+    display: flex !important;
+    flex-direction: column;
+    transform-origin: top left;
+    animation: none;
+    padding: 36px 60px 32px;
+    border-bottom: none;
+  }
+  html.mode-scroll .slide-body { flex: 1; min-height: 0; }
+  html.mode-scroll .overview { display: none !important; }
+  html.mode-scroll .title-slide .start { display: none; }
+  html.mode-scroll .topbar .progress,
+  html.mode-scroll .topbar .counter { display: none; }
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage">
+<div class="canvas" id="canvas">
+
+<header class="topbar">
+  <svg class="vast-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" aria-label="VAST Data">
+    <path fill="#FFFFFF" d="m20.9 15.7h15.1c2.6 0.2 4.8-1.5 5.1-4.1 0.3-4.6-0.5-9.7-4.2-9.7h-29.8c-3.6 0-7.1 3.8-5.2 8.7 0.5 1.2 23.4 38.5 27.4 44.4 1.3 1.7 3.3 2.8 5.9 1.6 1.4-0.9 4.8-3 5.5-3.9 1.1-1.3 1.6-2.8 0.5-4.7-1.3-2.2-14.6-23.6-20.3-32.3z"/>
+    <path fill="#1AB7EB" d="m112.6 1.9h-56c-2.8 0-4.5 2.2-4.5 5.9-0.2 3.3 0.1 7.8 4.5 7.9h42.2l-7.6 11.1c-1.2 1.9-0.8 4.1 1 5.6 4.6 3.1 7.7 5.7 10.8 2.1l14.6-23.2c2.2-3.2 0-8.9-5-9.4z"/>
+    <path fill="#FFFFFF" d="m86.7 42c-1.6-0.5-3.9-0.7-5.9 1.7l-21.7 33.7-7.4-12.7c-1.3-2-3.3-3.1-5.3-2.1-1.3 0.5-3.9 2.1-5.5 3.2-1.9 1.4-2.4 3.3-1.5 5.7l14.5 23.6c2.7 4.1 7.8 4.1 9.8 0.8l28.7-44.9c1.1-1.7 1-4.5-1.1-5.8-1.5-1.1-3.5-2.6-4.6-3.2z"/>
+  </svg>
+  <span class="crumb">LMCache &amp; NIXL</span>
+  <div class="mode-toggle" id="mode-toggle" title="Switch view mode">
+    <button data-mode="present">Present</button>
+    <button data-mode="scroll" class="on">Scroll</button>
+  </div>
+  <div class="spacer"></div>
+  <div class="progress"><div id="progress-bar"></div></div>
+  <span class="counter" id="counter">1 / 12</span>
+</header>
+
+<main class="deck" id="deck">
+
+  <!-- ============================================================ -->
+  <!-- SLIDE 1 — TITLE -->
+  <!-- ============================================================ -->
+  <section class="slide on title-slide" data-slide="0">
+    <div class="accent-bar"></div>
+    <div class="slide-eyebrow">Scaling KV caches for LLMs</div>
+    <h1><span class="highlight">LMCache</span> &amp; <span class="highlight">NIXL</span><br/>
+    Stop recomputing what you<br/>already computed.</h1>
+    <p class="lede">
+      Long-context inference is expensive because every request has to <em>read</em> the entire prompt
+      before it can write a single token. <strong>LMCache</strong> reuses that work across requests.
+      <strong>NIXL</strong> moves it across whatever storage and network you have.
+    </p>
+    <div class="start">Press <kbd>→</kbd> to begin · <kbd>O</kbd> for overview · <kbd>F</kbd> for fullscreen</div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SLIDE 2 — Prefill vs Decode -->
+  <!-- ============================================================ -->
+  <section class="slide" data-slide="1">
+    <div class="slide-head">
+      <div class="accent-bar"></div>
+      <div class="slide-eyebrow">01 · Phases of inference</div>
+      <h2 class="slide-title">Prefill vs. Decode — what each phase actually does</h2>
+      <p class="slide-sub">Every LLM request runs in two phases. They have different costs, different shapes, and different bottlenecks.</p>
+    </div>
+    <div class="slide-body">
+      <div class="grid-2">
+        <div class="def prefill">
+          <span class="tag">Phase 1 · Prefill</span>
+          <h3>Read the prompt</h3>
+          <p class="what">The model ingests the entire input prompt and produces internal state for it.</p>
+          <dl>
+            <dt>Input</dt>  <dd>All N tokens of the prompt, at once</dd>
+            <dt>Work</dt>   <dd>One forward pass over all N tokens (highly parallel)</dd>
+            <dt>Output</dt> <dd>The <strong>KV cache</strong> — per-layer key &amp; value tensors for every token</dd>
+            <dt>Cost</dt>   <dd>Compute-bound · attention is ~O(N²)</dd>
+            <dt>Latency</dt><dd>This is what you wait for before the first token (TTFT)</dd>
+          </dl>
+        </div>
+        <div class="def decode">
+          <span class="tag">Phase 2 · Decode</span>
+          <h3>Write the answer</h3>
+          <p class="what">The model generates output tokens one at a time, each step reading the KV cache and appending to it.</p>
+          <dl>
+            <dt>Input</dt>  <dd>The KV cache from prefill + the previous token</dd>
+            <dt>Work</dt>   <dd>One small forward pass <em>per output token</em> (sequential)</dd>
+            <dt>Output</dt> <dd>One token, then loop. KV cache grows by one entry per step.</dd>
+            <dt>Cost</dt>   <dd>Memory-bandwidth-bound · per-token cost is small</dd>
+            <dt>Latency</dt><dd>Determines tokens/second after the first token</dd>
+          </dl>
+        </div>
+      </div>
+      <div class="panel" style="display:flex; flex-direction:column; gap:12px;">
+        <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+          <h3 class="section-h" style="margin:0;">See it in action</h3>
+          <button id="phase-play" class="btn">▶  Run request</button>
+          <button id="phase-reset" class="btn-ghost">Reset</button>
+          <span class="pill" id="phase-stage">idle</span>
+          <div style="flex:1;"></div>
+          <span style="color:var(--vast-silver); font-size:14px;">N=1024 prompt tokens, 8 output tokens</span>
+        </div>
+        <svg id="phase-svg" viewBox="0 0 1380 160" preserveAspectRatio="xMidYMid meet" style="max-height: 180px;"></svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SLIDE 3 — The Waste -->
+  <!-- ============================================================ -->
+  <section class="slide" data-slide="2">
+    <div class="slide-head">
+      <div class="accent-bar"></div>
+      <div class="slide-eyebrow">02 · The waste</div>
+      <h2 class="slide-title">KV cache is born, used, then thrown away</h2>
+      <p class="slide-sub">Without a cache layer, every request that shares a prefix pays the full prefill cost again. Watch what happens over many requests.</p>
+    </div>
+    <div class="slide-body">
+      <div class="grid-1-3">
+        <div class="panel stack" style="gap:10px; padding: 18px 22px;">
+          <h3 class="section-h">Workload</h3>
+          <div class="control">
+            <label style="display:flex; justify-content:space-between; align-items:center;">
+              <span>Shared prefix (tokens)</span>
+              <span class="pill" id="waste-shared-val">6000</span>
+            </label>
+            <input id="waste-shared" type="range" min="0" max="8192" step="128" value="6000" />
+          </div>
+          <div class="control">
+            <label style="display:flex; justify-content:space-between; align-items:center;">
+              <span>Unique tail per request</span>
+              <span class="pill" id="waste-tail-val">400</span>
+            </label>
+            <input id="waste-tail" type="range" min="0" max="2048" step="64" value="400" />
+          </div>
+          <div class="control">
+            <label style="display:flex; justify-content:space-between; align-items:center;">
+              <span>Number of requests (N)</span>
+              <span class="pill" id="waste-n-val">20</span>
+            </label>
+            <input id="waste-n" type="range" min="1" max="50" step="1" value="20" />
+          </div>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:6px;">
+            <div class="toggles" id="waste-mode">
+              <button data-mode="off" class="on">No cache</button>
+              <button data-mode="on">LMCache</button>
+            </div>
+            <button id="waste-play" class="btn">▶  Replay</button>
+          </div>
+          <div class="stat-grid" style="margin-top:6px; grid-template-columns: 1fr 1fr;">
+            <div class="box"><div class="k">Total GPU work (sum of N)</div><div class="v" id="waste-total">—</div></div>
+            <div class="box"><div class="k">Of which redundant</div><div class="v" id="waste-redundant" style="color:var(--vast-bad)">—</div></div>
+            <div class="box"><div class="k">Per-request TTFT</div><div class="v" id="waste-ttft">—</div></div>
+            <div class="box"><div class="k">Tokens recomputed</div><div class="v" id="waste-tokens">—</div></div>
+          </div>
+        </div>
+        <div class="panel bare" style="display:flex; flex-direction:column; gap:10px; min-height:0;">
+          <div style="font-family:var(--fontmono); font-size:13px; color:var(--vast-silver); line-height:1.4;">
+            <span style="color:var(--vast-cyan); font-weight:600;">Each row = one request's prefill work on the GPU.</span>
+            Bar length = compute time that request consumes. Whether the requests run serially or
+            on parallel GPUs, the <em>compute</em> spent — and the redundant red portion — is the same.
+          </div>
+          <svg id="waste-svg" viewBox="0 0 900 460" preserveAspectRatio="xMidYMid meet" style="flex:1; min-height:0;"></svg>
+          <div class="callout bad" id="waste-callout"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SLIDE 4 — Together: who decides, who moves -->
+  <!-- ============================================================ -->
+  <section class="slide" data-slide="3">
+    <div class="slide-head">
+      <div class="accent-bar"></div>
+      <div class="slide-eyebrow">03 · The two layers</div>
+      <h2 class="slide-title">Together: who decides, who moves</h2>
+      <p class="slide-sub">LMCache and NIXL solve two halves of the same problem. LMCache decides <em>what</em> to reuse; NIXL gets it where it needs to go.</p>
+    </div>
+    <div class="slide-body">
+      <div class="grid-2">
+        <div class="panel bare" style="display:flex; flex-direction:column;">
+          <h3 class="section-h">The stack</h3>
+          <svg id="arch-svg" viewBox="0 0 720 440" preserveAspectRatio="xMidYMid meet" style="flex:1; min-height:0; margin-top:8px;"></svg>
+        </div>
+        <div class="stack">
+          <div class="panel">
+            <h3 class="section-h" style="color:var(--vast-cyan); font-size:16px;">LMCache · the brain</h3>
+            <ul class="checklist">
+              <li><strong>Decides</strong> what KV cache is worth keeping</li>
+              <li><strong>Indexes</strong> blocks by token-prefix hash</li>
+              <li><strong>Looks up</strong> hits for incoming requests</li>
+              <li><strong>Owns</strong> eviction, policy, multi-tenant keying</li>
+            </ul>
+          </div>
+          <div class="panel">
+            <h3 class="section-h" style="color:var(--vast-cyan); font-size:16px;">NIXL · the muscle</h3>
+            <ul class="checklist">
+              <li><strong>Moves</strong> KV between GPU, CPU, disk, network, object store</li>
+              <li><strong>Abstracts</strong> a single buffer-list descriptor over all of them</li>
+              <li><strong>Optimizes</strong> for zero-copy and async transfers</li>
+              <li><strong>Plugs in</strong> backends: UCX, CUDA IPC, Mooncake, POSIX, S3</li>
+            </ul>
+          </div>
+          <div class="callout">
+            <strong>Crucially:</strong> NIXL is <em>below</em> LMCache, not above it. LMCache asks <em>what</em> exists and <em>where</em>; NIXL is the data path that gets it into GPU memory.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SLIDE 5 — How a cache hit flows -->
+  <!-- ============================================================ -->
+  <section class="slide" data-slide="4">
+    <div class="slide-head">
+      <div class="accent-bar"></div>
+      <div class="slide-eyebrow">03 · The two layers (continued)</div>
+      <h2 class="slide-title">A request that hits the cache, end to end</h2>
+      <p class="slide-sub">Sequence diagram of one cache-hit request. Each layer does one job and hands off.</p>
+    </div>
+    <div class="slide-body">
+      <div class="panel bare" style="display:flex; flex-direction:column;">
+        <svg id="seq-svg" viewBox="0 0 1400 480" preserveAspectRatio="xMidYMid meet" style="flex:1; min-height:0;"></svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SLIDE 6 — LMCache: what & why -->
+  <!-- ============================================================ -->
+  <section class="slide" data-slide="5">
+    <div class="slide-head">
+      <div class="accent-bar"></div>
+      <div class="slide-eyebrow">04 · LMCache</div>
+      <h2 class="slide-title">LMCache, in detail</h2>
+      <p class="slide-sub">A cache layer at the inference engine that treats KV cache as a first-class, addressable, reusable artifact.</p>
+    </div>
+    <div class="slide-body">
+      <div class="grid-2">
+        <div class="panel">
+          <h3 class="section-h" style="font-size:16px;">What it is</h3>
+          <ul class="checklist">
+            <li>Sits next to the inference engine (e.g. vLLM)</li>
+            <li>Maintains an <strong>index</strong> of KV cache blocks, keyed by hash of the token prefix that produced them</li>
+            <li>On each prompt, finds the longest matching prefix and asks NIXL to materialize those blocks into GPU memory</li>
+            <li>If a request misses, the engine prefills normally — and LMCache <em>captures</em> the resulting KV blocks for next time</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3 class="section-h" style="font-size:16px;">What it does</h3>
+          <ul class="checklist">
+            <li>Eliminates redundant prefill across requests with shared prefixes</li>
+            <li>Drops time-to-first-token dramatically on long, repeated contexts</li>
+            <li>Enables prefill / decode disaggregation: one machine prefills, another decodes — using the cache as the handoff</li>
+            <li>Supports multi-tenant policies through the lookup key (include tenant ID for isolation, omit it to share)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SLIDE 7 — LMCache examples -->
+  <!-- ============================================================ -->
+  <section class="slide" data-slide="6">
+    <div class="slide-head">
+      <div class="accent-bar"></div>
+      <div class="slide-eyebrow">04 · LMCache · use cases</div>
+      <h2 class="slide-title">Where LMCache pays off — three concrete examples</h2>
+      <p class="slide-sub">Click a tab. Cyan blocks are cache hits — the model skips them entirely.</p>
+    </div>
+    <div class="slide-body">
+      <div class="panel bare" style="display:flex; flex-direction:column; min-height:0;">
+        <div class="tabs" id="ex-tabs">
+          <button class="tab on" data-tab="rag">RAG</button>
+          <button class="tab" data-tab="sys">Shared system prompt</button>
+          <button class="tab" data-tab="chat">Multi-turn chat</button>
+        </div>
+        <div class="tab-pane on" data-pane="rag">
+          <p style="font-size:16px; margin:0; line-height:1.5;">Two questions retrieve overlapping chunks from your vector store. Without LMCache, each question re-prefills the same documents from scratch. With LMCache, the second request reuses the KV blocks for those documents.</p>
+          <svg id="ex-rag-svg" viewBox="0 0 1400 360" preserveAspectRatio="xMidYMid meet" style="flex:1; min-height:0;"></svg>
+        </div>
+        <div class="tab-pane" data-pane="sys">
+          <p style="font-size:16px; margin:0; line-height:1.5;">Every customer request shares a 4,000-token system prompt. LMCache stores it once. Every subsequent request starts decoding nearly instantly from the cached prefix.</p>
+          <svg id="ex-sys-svg" viewBox="0 0 1400 360" preserveAspectRatio="xMidYMid meet" style="flex:1; min-height:0;"></svg>
+        </div>
+        <div class="tab-pane" data-pane="chat">
+          <p style="font-size:16px; margin:0; line-height:1.5;">Each turn in a chat extends the prompt with the previous turn. LMCache reuses everything up to the new user message.</p>
+          <svg id="ex-chat-svg" viewBox="0 0 1400 360" preserveAspectRatio="xMidYMid meet" style="flex:1; min-height:0;"></svg>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SLIDE 8 — LMCache live demo -->
+  <!-- ============================================================ -->
+  <section class="slide" data-slide="7">
+    <div class="slide-head">
+      <div class="accent-bar"></div>
+      <div class="slide-eyebrow">04 · LMCache · live demo</div>
+      <h2 class="slide-title">Try it: prefix matching with hash-keyed blocks</h2>
+      <p class="slide-sub">Edit the new request. Tokens that match a cached prefix block light up cyan — those are KV cache hits.</p>
+    </div>
+    <div class="slide-body">
+      <div class="grid-3-1">
+        <div class="panel" style="display:flex; flex-direction:column; gap:14px;">
+          <div>
+            <h3 class="section-h">Cached requests in LMCache</h3>
+            <div class="prompts" id="history-prompts"></div>
+          </div>
+          <div>
+            <h3 class="section-h">New incoming request — edit me</h3>
+            <textarea id="newreq" rows="2">You are a helpful assistant. Summarize the following document for the legal team. The contract states that</textarea>
+          </div>
+          <div>
+            <div class="prompt-row input">
+              <div class="label">NEW</div>
+              <div class="toks" id="newreq-toks"></div>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3 class="section-h">LMCache decision</h3>
+          <div style="display:flex; align-items:baseline; gap:14px; margin-top: 10px;">
+            <span style="font-family:var(--fontmono); font-size:54px; color:var(--vast-cyan); font-weight:700;" id="hit-rate">0%</span>
+            <span style="color:var(--vast-silver); font-size:16px;">prefix hit</span>
+          </div>
+          <div style="margin-top:18px;">
+            <div style="color:var(--vast-silver); font-size:12px; margin-bottom:6px; text-transform:uppercase; letter-spacing:.1em; font-weight:600;">Tokens served from cache</div>
+            <svg id="hit-bar" viewBox="0 0 240 14" style="width:100%; height: 18px;"></svg>
+          </div>
+          <div style="margin-top:18px;">
+            <div style="color:var(--vast-silver); font-size:12px; margin-bottom:8px; text-transform:uppercase; letter-spacing:.1em; font-weight:600;">Prefill saved</div>
+            <span class="pill" id="time-saved">—</span>
+          </div>
+          <div class="legend" style="margin-top:18px;">
+            <span><span class="sw" style="background:rgba(0,212,255,.55); border:1px solid var(--vast-cyan);"></span>cache hit</span>
+            <span><span class="sw" style="background:var(--vast-navy-2); border:1px solid var(--vast-line);"></span>recompute</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SLIDE 9 — NIXL: the abstraction -->
+  <!-- ============================================================ -->
+  <section class="slide" data-slide="8">
+    <div class="slide-head">
+      <div class="accent-bar"></div>
+      <div class="slide-eyebrow">05 · NIXL</div>
+      <h2 class="slide-title">NIXL — one buffer list, many backends</h2>
+      <p class="slide-sub">A unified data-movement layer for KV cache. Below LMCache, above the messy reality of GPU memory, host RAM, NVMe, networks, and object stores.</p>
+    </div>
+    <div class="slide-body">
+      <div class="grid-2">
+        <div class="panel">
+          <h3 class="section-h" style="font-size:16px;">The problem it solves</h3>
+          <p style="font-size:15px; line-height:1.5;">KV cache lives <em>somewhere</em> — and where varies. A hot block sits in GPU HBM. A warm block sits in host CPU memory. A cold block sits on local NVMe. A cross-node block lives on another machine. A historical block lives in object storage. Each has its own API and transfer model.</p>
+          <p style="color:var(--vast-silver); font-size:14px; line-height:1.5;">Without an abstraction, every higher-level system has to write code for every backend it wants to support. NIXL gives them one.</p>
+          <h3 class="section-h" style="margin-top:18px;">The core abstraction</h3>
+<pre style="margin-top:8px;"><span class="k">nixl_xfer_desc</span> {
+  entries: [
+    { dev: gpu0,   addr: 0x7f...,  len: 8 KB },
+    { dev: cpu,    addr: 0x55...,  len: 8 KB },
+    { dev: nvme0,  offset: 0x4000, len: 32KB },
+    { dev: s3,     key: "kv/abcd", len: 64KB },
+    { dev: node3,  addr: 0x9c...,  len: 8 KB },
+  ],
+  async: true,
+  zero_copy: true
+}</pre>
+        </div>
+        <div class="stack">
+          <div class="panel" style="flex:1; display:flex; flex-direction:column;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <h3 class="section-h" style="margin:0; font-size:16px;">One logical KV cache, scattered across tiers</h3>
+              <button id="shuffle" class="btn-ghost">↻ Shuffle</button>
+            </div>
+            <div class="buffer-vis" id="buffer-vis" style="margin-top:14px; flex:1; overflow:auto;"></div>
+            <div class="legend" style="margin-top:12px;">
+              <span><span class="sw device-gpu"></span>GPU HBM</span>
+              <span><span class="sw device-cpu"></span>Host RAM</span>
+              <span><span class="sw device-ssd"></span>NVMe</span>
+              <span><span class="sw device-obj"></span>Object</span>
+              <span><span class="sw device-net"></span>Remote</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SLIDE 10 — NIXL: design wins (visual) -->
+  <!-- ============================================================ -->
+  <section class="slide" data-slide="9">
+    <div class="slide-head">
+      <div class="accent-bar"></div>
+      <div class="slide-eyebrow">05 · NIXL · why it's fast</div>
+      <h2 class="slide-title">Two design wins: zero-copy and async</h2>
+      <p class="slide-sub">Beyond unifying the API, NIXL also moves bytes faster than naive paths would — by skipping CPU staging and by never blocking the GPU.</p>
+    </div>
+    <div class="slide-body">
+      <div class="grid-2">
+
+        <!-- WIN 1 — Zero-copy -->
+        <div class="def" style="border-top: 4px solid var(--vast-cyan); display:flex; flex-direction:column; gap:10px;">
+          <span class="tag" style="background:rgba(0,212,255,.16); color:var(--vast-cyan); border:1px solid var(--vast-cyan);">Win 1</span>
+          <h3>Zero-copy, direct paths</h3>
+          <p class="what" style="margin:0;">NIXL moves data directly between endpoints — but only when the backend speaks <strong>RDMA</strong> (GPU↔NIC, GPU↔NVMe via GPUDirect, S3-over-RDMA). Plain HTTP object storage still stages through a CPU buffer.</p>
+          <svg id="zerocopy-svg" viewBox="0 0 600 390" preserveAspectRatio="xMidYMid meet" style="flex:1; min-height:0;"></svg>
+        </div>
+
+        <!-- WIN 2 — Async -->
+        <div class="def" style="border-top: 4px solid var(--vast-cyan); display:flex; flex-direction:column; gap:10px;">
+          <span class="tag" style="background:rgba(0,212,255,.16); color:var(--vast-cyan); border:1px solid var(--vast-cyan);">Win 2</span>
+          <h3>Async / non-blocking</h3>
+          <p class="what" style="margin:0;">Transfers return immediately. The GPU keeps computing while data moves in the background.</p>
+          <svg id="async-svg" viewBox="0 0 600 340" preserveAspectRatio="xMidYMid meet" style="flex:1; min-height:0;"></svg>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SLIDE 11 — Real-world benchmark + video -->
+  <!-- ============================================================ -->
+  <section class="slide" data-slide="10">
+    <div class="slide-head">
+      <div class="accent-bar"></div>
+      <div class="slide-eyebrow">05 · NIXL · measured benefit</div>
+      <h2 class="slide-title">KV cache storage offload — real numbers</h2>
+      <p class="slide-sub">Qwen3-235B-A22B-Instruct-2507-fp8 on 8× H100 GPUs, no prefill cache, retrieving KV from VAST Storage. As input length grows, the savings compound.</p>
+    </div>
+    <div class="slide-body">
+      <div class="grid-2">
+
+        <!-- Chart -->
+        <div class="panel" style="display:flex; flex-direction:column;">
+          <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+            <h3 class="section-h" style="margin:0;">TTFT vs Input Sequence Length</h3>
+            <div style="flex:1;"></div>
+            <div style="display:flex; align-items:center; gap:10px; padding:6px 12px; background:var(--vast-deep-blue); border:1px solid var(--vast-line); border-radius:6px;">
+              <span style="color:var(--vast-silver); font-size:10px; font-family:var(--fontmono); text-transform:uppercase; letter-spacing:.14em; font-weight:600;">Benchmark by</span>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" style="height:22px; width:auto; display:block;" aria-label="VAST Data">
+                <path fill="#FFFFFF" d="m20.9 15.7h15.1c2.6 0.2 4.8-1.5 5.1-4.1 0.3-4.6-0.5-9.7-4.2-9.7h-29.8c-3.6 0-7.1 3.8-5.2 8.7 0.5 1.2 23.4 38.5 27.4 44.4 1.3 1.7 3.3 2.8 5.9 1.6 1.4-0.9 4.8-3 5.5-3.9 1.1-1.3 1.6-2.8 0.5-4.7-1.3-2.2-14.6-23.6-20.3-32.3z"/>
+                <path fill="#1AB7EB" d="m112.6 1.9h-56c-2.8 0-4.5 2.2-4.5 5.9-0.2 3.3 0.1 7.8 4.5 7.9h42.2l-7.6 11.1c-1.2 1.9-0.8 4.1 1 5.6 4.6 3.1 7.7 5.7 10.8 2.1l14.6-23.2c2.2-3.2 0-8.9-5-9.4z"/>
+                <path fill="#FFFFFF" d="m86.7 42c-1.6-0.5-3.9-0.7-5.9 1.7l-21.7 33.7-7.4-12.7c-1.3-2-3.3-3.1-5.3-2.1-1.3 0.5-3.9 2.1-5.5 3.2-1.9 1.4-2.4 3.3-1.5 5.7l14.5 23.6c2.7 4.1 7.8 4.1 9.8 0.8l28.7-44.9c1.1-1.7 1-4.5-1.1-5.8-1.5-1.1-3.5-2.6-4.6-3.2z"/>
+              </svg>
+              <span style="color:var(--vast-silver); font-size:13px; font-weight:700;">+</span>
+              <span style="color:#76B900; font-family:var(--fonth); font-weight:900; letter-spacing:-.02em; font-size:15px;">NVIDIA</span>
+            </div>
+          </div>
+          <svg id="bench-real" viewBox="0 0 720 480" preserveAspectRatio="xMidYMid meet" style="flex:1; min-height:0; margin-top:8px;"></svg>
+          <div class="legend" style="justify-content:center; margin-top:8px; gap:24px;">
+            <span><span class="sw" style="background:#3b82f6"></span>KV computed (no cache)</span>
+            <span><span class="sw" style="background:#f59e0b"></span>KV retrieved from storage</span>
+          </div>
+        </div>
+
+        <!-- Video -->
+        <div class="panel" style="display:flex; flex-direction:column; gap:12px;">
+          <h3 class="section-h">Watch the original talk</h3>
+          <a class="yt-thumb" href="https://www.youtube.com/watch?v=87T-irSjXfE" target="_blank" rel="noopener" aria-label="Watch on YouTube">
+            <img src="https://i.ytimg.com/vi/87T-irSjXfE/maxresdefault.jpg" alt="Talk thumbnail" />
+            <span class="yt-play"></span>
+            <span class="yt-meta">Scaling KV Caches for LLMs · J. Jiang &amp; M. Khazraee · PyTorch</span>
+            <span class="yt-badge">YouTube</span>
+          </a>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <a class="btn" href="https://www.youtube.com/watch?v=87T-irSjXfE&amp;t=1380s" target="_blank" rel="noopener" style="text-decoration:none; display:inline-flex; align-items:center;">▶  Jump to 23:00 — benchmark discussion</a>
+            <a class="btn-ghost" href="https://www.youtube.com/watch?v=87T-irSjXfE" target="_blank" rel="noopener" style="text-decoration:none; display:inline-flex; align-items:center;">Watch from start ↗</a>
+          </div>
+          <p style="margin:0; color:var(--vast-silver); font-size:13px; line-height:1.5;">
+            "Scaling KV caches for LLMs — how LMCache and NIXL handle network and storage heterogeneity"
+            by Junan &amp; Mo (NVIDIA). The benchmark shown above is discussed around the 23-minute mark.
+          </p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SLIDE 12 — Bottom line -->
+  <!-- ============================================================ -->
+  <section class="slide" data-slide="11">
+    <div class="slide-head">
+      <div class="accent-bar"></div>
+      <div class="slide-eyebrow">06 · Bottom line</div>
+      <h2 class="slide-title">KV cache becomes a tier of the storage hierarchy</h2>
+    </div>
+    <div class="slide-body">
+      <div class="grid-2">
+        <div class="panel">
+          <ul class="checklist" style="font-size:18px;">
+            <li><strong>Prefill is the expensive phase</strong> of long-context inference. The KV cache it produces is throwaway by default.</li>
+            <li><strong>LMCache</strong> turns KV cache into a reusable artifact, indexed by token-prefix hash.</li>
+            <li><strong>NIXL</strong> turns "where the cache lives" into a non-issue: one buffer-list descriptor across GPU / CPU / disk / network / object store.</li>
+            <li><strong>Together</strong>, they make KV cache a tier of the storage hierarchy — not a per-request scratch space.</li>
+          </ul>
+        </div>
+        <div class="panel" style="display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center;">
+          <div style="font-family:var(--fontmono); font-size:14px; color:var(--vast-cyan); letter-spacing:.2em; text-transform:uppercase; margin-bottom:20px; font-weight:600;">The shift</div>
+          <div style="font-family:var(--fonth); font-size:42px; line-height:1.25; max-width:30ch;">
+            KV cache stops being<br/><span style="color:var(--vast-bad)">scratch space</span><br/>
+            and starts being<br/><span style="color:var(--vast-cyan)">storage</span>.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="navbar">
+  <div class="hint">
+    <kbd>←</kbd><kbd>→</kbd> navigate · <kbd>O</kbd> overview · <kbd>F</kbd> fullscreen · <kbd>Home</kbd> first · <kbd>End</kbd> last
+  </div>
+  <div class="dots" id="dots"></div>
+  <div class="nav-btns">
+    <button id="prev" title="Previous (←)">‹</button>
+    <button id="next" title="Next (→)">›</button>
+  </div>
+</footer>
+
+<!-- Overview mode -->
+<div class="overview" id="overview">
+  <h2>Slide overview</h2>
+  <div class="overview-grid" id="overview-grid"></div>
+</div>
+
+</div> <!-- /canvas -->
+</div> <!-- /stage -->
+
+<script>
+/* ==============================================================
+   Wrap each slide in a .slide-frame so scroll mode can give it
+   an aspect-ratio container that hosts the (scaled) design canvas.
+   In present mode .slide-frame is `display: contents` so it's
+   invisible to layout — slides remain absolute children of .deck.
+   ============================================================== */
+document.querySelectorAll('.slide').forEach(slide => {
+  const wrap = document.createElement('div');
+  wrap.className = 'slide-frame';
+  slide.parentNode.insertBefore(wrap, slide);
+  wrap.appendChild(slide);
+});
+
+/* ==============================================================
+   Mode switching — Present (canvas-scaled slides) vs Scroll (flowing page)
+   ============================================================== */
+function setMode(mode) {
+  if (mode !== 'present' && mode !== 'scroll') mode = 'present';
+  document.documentElement.className = `mode-${mode}`;
+  document.querySelectorAll('#mode-toggle button').forEach(b =>
+    b.classList.toggle('on', b.dataset.mode === mode));
+  try { localStorage.setItem('lmcache-mode', mode); } catch {}
+  fit();
+  if (mode === 'scroll') {
+    // Scroll to the currently-active slide so context is preserved when switching
+    const active = document.querySelector('.slide.on') || document.querySelector('.slide');
+    const frame = active ? active.closest('.slide-frame') : null;
+    if (frame) setTimeout(() => frame.scrollIntoView({ behavior: 'instant', block: 'start' }), 0);
+  } else {
+    // Switching back to present: clear per-slide transforms (canvas-level transform takes over)
+    document.querySelectorAll('.slide').forEach(s => { s.style.transform = ''; });
+  }
+}
+document.querySelectorAll('#mode-toggle button').forEach(btn => {
+  btn.addEventListener('click', () => setMode(btn.dataset.mode));
+});
+// Initial mode: URL ?mode=... wins, else localStorage, else present
+const _params = new URLSearchParams(location.search);
+const _initMode = _params.get('mode') ||
+  (() => { try { return localStorage.getItem('lmcache-mode'); } catch { return null; } })() ||
+  'scroll';
+
+/* ==============================================================
+   Canvas scaling
+   - Present mode: scale the whole 1600×900 canvas to the viewport.
+   - Scroll mode:  scale each slide independently to its frame width.
+   ============================================================== */
+const DESIGN_W = 1600, DESIGN_H = 900;
+function fitScale() {
+  const canvas = document.getElementById('canvas');
+  const stage = document.getElementById('stage');
+  const sw = stage.clientWidth, sh = stage.clientHeight;
+  const scale = Math.min(sw / DESIGN_W, sh / DESIGN_H);
+  canvas.style.transform = `scale(${scale})`;
+}
+function fitScroll() {
+  const frame = document.querySelector('.slide-frame');
+  if (!frame) return;
+  const w = frame.clientWidth;
+  const scale = Math.min(1, w / DESIGN_W);
+  document.querySelectorAll('.slide').forEach(s => {
+    s.style.transform = `scale(${scale})`;
+  });
+}
+function fit() {
+  if (document.documentElement.classList.contains('mode-scroll')) {
+    document.getElementById('canvas').style.transform = '';
+    fitScroll();
+  } else {
+    document.querySelectorAll('.slide').forEach(s => { s.style.transform = ''; });
+    fitScale();
+  }
+}
+window.addEventListener('resize', fit);
+window.addEventListener('load', fit);
+// Apply initial mode (this also calls fit for the right mode)
+setMode(_initMode);
+
+/* ==============================================================
+   Helpers
+   ============================================================== */
+const $  = (s,r=document) => r.querySelector(s);
+const $$ = (s,r=document) => Array.from(r.querySelectorAll(s));
+const fmtMs = (ms) => ms < 1 ? `${(ms*1000).toFixed(0)} µs`
+                    : ms < 1000 ? `${ms.toFixed(ms<10?1:0)} ms`
+                    : `${(ms/1000).toFixed(2)} s`;
+const fmtTok = (n) => n>=1000 ? `${(n/1000).toFixed(n>=10000?0:1)}k` : `${n}`;
+const escapeHtml = s => s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+
+const COEF = {
+  prefillLin: 0.012, prefillSq: 1.6e-6,
+  decodePerTok: (n) => 8 + 0.0015*n,
+  kvBytesPerTok: 0.5,
+};
+const prefillMs = (n) => COEF.prefillLin*n + COEF.prefillSq*n*n;
+
+/* ==============================================================
+   Slide navigation
+   ============================================================== */
+const SLIDE_TITLES = [
+  { num:'',    title:'Title',                              desc:'LMCache + NIXL intro' },
+  { num:'01',  title:'Prefill vs. Decode',                 desc:'What each phase actually does' },
+  { num:'02',  title:'The waste',                          desc:'KV cache born → used → tossed' },
+  { num:'03',  title:'Together',                           desc:'Who decides, who moves' },
+  { num:'03',  title:'Cache-hit flow',                     desc:'Sequence diagram' },
+  { num:'04',  title:'LMCache, in detail',                 desc:'What it is, what it does' },
+  { num:'04',  title:'LMCache examples',                   desc:'RAG, system prompt, multi-turn' },
+  { num:'04',  title:'LMCache live demo',                  desc:'Prefix matching' },
+  { num:'05',  title:'NIXL — buffer list',                 desc:'One abstraction, many backends' },
+  { num:'05',  title:'NIXL — design wins',                 desc:'Zero-copy and async' },
+  { num:'05',  title:'Storage offload benchmark',          desc:'Real numbers + original talk' },
+  { num:'06',  title:'Bottom line',                        desc:'Takeaways' },
+];
+const TOTAL = SLIDE_TITLES.length;
+let cur = 0;
+
+function go(n) {
+  if (n < 0 || n >= TOTAL) return;
+  cur = n;
+  $$('.slide').forEach(s => s.classList.toggle('on', +s.dataset.slide === cur));
+  $('#counter').textContent = `${cur+1} / ${TOTAL}`;
+  $('#progress-bar').style.width = `${((cur+1)/TOTAL)*100}%`;
+  $$('#dots .dot').forEach((d,i) => d.classList.toggle('on', i === cur));
+  $('#overview').classList.remove('on');
+}
+function next() { go(Math.min(cur+1, TOTAL-1)); }
+function prev() { go(Math.max(cur-1, 0)); }
+
+const dotsEl = $('#dots');
+for (let i=0;i<TOTAL;i++) {
+  const d = document.createElement('div');
+  d.className = 'dot' + (i===0?' on':'');
+  d.title = SLIDE_TITLES[i].title;
+  d.addEventListener('click', () => go(i));
+  dotsEl.appendChild(d);
+}
+const ovGrid = $('#overview-grid');
+SLIDE_TITLES.forEach((s, i) => {
+  const c = document.createElement('div');
+  c.className = 'overview-card';
+  c.innerHTML = `<div class="num">${s.num ? s.num + ' · ' : ''}slide ${i+1}</div>
+                 <div class="title">${s.title}</div>
+                 <div class="desc">${s.desc}</div>`;
+  c.addEventListener('click', () => go(i));
+  ovGrid.appendChild(c);
+});
+
+$('#prev').addEventListener('click', prev);
+$('#next').addEventListener('click', next);
+window.addEventListener('keydown', (e) => {
+  if (['TEXTAREA','INPUT'].includes(e.target.tagName)) return;
+  if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); next(); }
+  else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); prev(); }
+  else if (e.key === 'Home') { go(0); }
+  else if (e.key === 'End') { go(TOTAL-1); }
+  else if (e.key === 'o' || e.key === 'O') { $('#overview').classList.toggle('on'); }
+  else if (e.key === 'f' || e.key === 'F') {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+    else document.exitFullscreen();
+  }
+  else if (e.key === 'Escape') { $('#overview').classList.remove('on'); }
+});
+
+/* ==============================================================
+   01 — Prefill vs Decode timeline
+   ============================================================== */
+const PHASE = { N: 1024, outTokens: 8, state: 'idle', t: 0, timer: null };
+function drawPhase() {
+  const svg = $('#phase-svg');
+  const W=1380, H=160, padL=200, padR=24, padT=22;
+  const innerW = W-padL-padR;
+  const showCells = 28;
+  const cw = innerW / (showCells + 8);
+  const cellH = 26;
+  const promptY = padT + 14;
+  const kvY = promptY + cellH + 22;
+  const phase = PHASE.state;
+
+  let s = `
+    <text x="${padL-14}" y="${promptY+18}" text-anchor="end" font-size="14" fill="#b8c5d4" font-family="ui-monospace,monospace">prompt tokens</text>
+    <text x="${padL-14}" y="${kvY+18}" text-anchor="end" font-size="14" fill="#b8c5d4" font-family="ui-monospace,monospace">KV cache + output</text>
+  `;
+  for (let i=0;i<showCells;i++) {
+    const x = padL + i*cw;
+    s += `<rect x="${x+1}" y="${promptY}" width="${cw-2}" height="${cellH}" rx="3"
+            fill="#1c3358" stroke="${phase==='prefill'?'#00d4ff':'#234670'}" stroke-width="${phase==='prefill'?'1.5':'1'}"/>`;
+  }
+  if (phase === 'prefill') {
+    s += `<path d="M ${padL} ${promptY-4} L ${padL} ${promptY-12} L ${padL+showCells*cw} ${promptY-12} L ${padL+showCells*cw} ${promptY-4}"
+            stroke="#00d4ff" fill="none" stroke-width="2"/>
+          <text x="${padL+(showCells*cw)/2}" y="${promptY-18}" text-anchor="middle" font-size="14" fill="#00d4ff" font-family="ui-monospace,monospace" font-weight="600">all N tokens, one parallel forward pass</text>`;
+  }
+
+  let kvFilled = 0;
+  if (phase === 'prefill') kvFilled = Math.min(showCells, Math.floor((PHASE.t/8)*showCells));
+  else if (phase === 'decode' || phase === 'done') kvFilled = showCells + Math.min(8, Math.floor(PHASE.t));
+  for (let i=0;i<showCells+8;i++) {
+    const x = padL + i*cw;
+    let fill = '#142540', stroke = '#234670';
+    if (i < showCells) {
+      fill = i < kvFilled ? 'rgba(0,212,255,.55)' : '#142540';
+      stroke = i < kvFilled ? '#00d4ff' : '#234670';
+    } else {
+      const decFilled = Math.max(0, kvFilled - showCells);
+      fill = (i - showCells) < decFilled ? 'rgba(94,234,212,.55)' : '#142540';
+      stroke = (i - showCells) < decFilled ? '#5eead4' : '#234670';
+    }
+    s += `<rect x="${x+1}" y="${kvY}" width="${cw-2}" height="${cellH}" rx="3" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`;
+  }
+
+  const sepX = padL + showCells*cw;
+  s += `<line x1="${sepX}" y1="${kvY-6}" x2="${sepX}" y2="${kvY+cellH+6}" stroke="#234670" stroke-dasharray="3 3"/>`;
+  s += `<text x="${sepX-6}" y="${kvY+cellH+22}" text-anchor="end" font-size="13" fill="#00d4ff" font-family="ui-monospace,monospace" font-weight="600">prefill →</text>`;
+  s += `<text x="${sepX+6}" y="${kvY+cellH+22}" font-size="13" fill="#5eead4" font-family="ui-monospace,monospace" font-weight="600">← decode</text>`;
+
+  const stageLbl = phase==='prefill' ? 'PREFILL — building KV cache' :
+                   phase==='decode'  ? 'DECODE — one token per step' :
+                   phase==='done'    ? 'DONE' : '';
+  if (stageLbl) {
+    s += `<text x="${W-padR}" y="${promptY-12}" text-anchor="end" font-size="14" fill="#00d4ff" font-family="ui-monospace,monospace" font-weight="700">${stageLbl}</text>`;
+  }
+
+  svg.innerHTML = s;
+  $('#phase-stage').textContent = phase;
+}
+function runPhase() {
+  if (PHASE.timer) clearInterval(PHASE.timer);
+  PHASE.t = 0; PHASE.state = 'prefill'; drawPhase();
+  PHASE.timer = setInterval(() => {
+    PHASE.t++;
+    if (PHASE.state === 'prefill' && PHASE.t >= 8) { PHASE.state = 'decode'; PHASE.t = 0; }
+    else if (PHASE.state === 'decode' && PHASE.t >= 8) { PHASE.state = 'done'; clearInterval(PHASE.timer); }
+    drawPhase();
+  }, 240);
+}
+$('#phase-play').addEventListener('click', runPhase);
+$('#phase-reset').addEventListener('click', () => { if(PHASE.timer)clearInterval(PHASE.timer); PHASE.state='idle'; PHASE.t=0; drawPhase(); });
+drawPhase();
+
+/* ==============================================================
+   02 — The waste
+   ============================================================== */
+const WASTE = { mode: 'off', anim: 0, animTimer: null };
+function drawWaste() {
+  const shared = +$('#waste-shared').value;
+  const tail   = +$('#waste-tail').value;
+  const N      = +$('#waste-n').value;
+  $('#waste-shared-val').textContent = shared;
+  $('#waste-tail-val').textContent   = tail;
+  $('#waste-n-val').textContent      = N;
+
+  const total = shared + tail;
+  const pfFull = prefillMs(total);
+  const pfTailOnly = prefillMs(total) - prefillMs(shared);
+  const cacheLoadMs = 6 + 0.001*shared;
+  const totalOff = N * pfFull;
+  const totalOn  = pfFull + (N-1)*(pfTailOnly + cacheLoadMs);
+  const redundantMs = WASTE.mode==='off' ? (totalOff - totalOn) : 0;
+  const tokensRecomputed = WASTE.mode==='off' ? (N-1)*shared : 0;
+  const ttftAvg = WASTE.mode==='off' ? pfFull : (pfFull + (N-1)*(pfTailOnly+cacheLoadMs))/N;
+
+  const svg = $('#waste-svg');
+  const W=900, H=460, padL=80, padR=24, padT=24, padB=46;
+  const innerW = W-padL-padR;
+  const rowH = (H-padT-padB) / Math.max(N, 1);
+  const xScale = (innerW - 12) / pfFull;
+
+  let s = `<text x="${padL-12}" y="${padT-6}" text-anchor="end" font-size="12" fill="#b8c5d4" font-family="ui-monospace,monospace">req</text>
+           <text x="${padL}" y="${padT-6}" font-size="12" fill="#b8c5d4" font-family="ui-monospace,monospace">prefill cost (ms) →</text>`;
+
+  const visN = Math.min(N, Math.max(1, WASTE.anim));
+  for (let i=0;i<N;i++) {
+    const y = padT + i*rowH;
+    const visible = i < visN;
+    const bh = Math.max(4, rowH-2);
+    if (WASTE.mode==='off') {
+      const sharedW = visible ? prefillMs(shared) * xScale : 0;
+      const tailW   = visible ? (prefillMs(total)-prefillMs(shared)) * xScale : 0;
+      const isFirst = i===0;
+      s += `<rect x="${padL}" y="${y}" width="${sharedW}" height="${bh}" rx="2"
+              fill="${isFirst ? 'rgba(0,212,255,.7)' : 'rgba(255,107,107,.55)'}"
+              stroke="${isFirst ? '#00d4ff' : '#ff6b6b'}"/>
+            <rect x="${padL+sharedW}" y="${y}" width="${tailW}" height="${bh}" rx="2"
+              fill="rgba(94,234,212,.5)" stroke="#5eead4"/>`;
+    } else {
+      const isFirst = i===0;
+      const sharedW = visible ? prefillMs(shared) * xScale : 0;
+      const tailW   = visible ? (prefillMs(total)-prefillMs(shared)) * xScale : 0;
+      const cacheW  = visible ? cacheLoadMs * xScale : 0;
+      if (isFirst) {
+        s += `<rect x="${padL}" y="${y}" width="${sharedW}" height="${bh}" rx="2" fill="rgba(0,212,255,.7)" stroke="#00d4ff"/>
+              <rect x="${padL+sharedW}" y="${y}" width="${tailW}" height="${bh}" rx="2" fill="rgba(94,234,212,.5)" stroke="#5eead4"/>`;
+      } else {
+        s += `<rect x="${padL}" y="${y}" width="${cacheW}" height="${bh}" rx="2" fill="rgba(192,132,252,.55)" stroke="#a855f7"/>
+              <rect x="${padL+cacheW}" y="${y}" width="${tailW}" height="${bh}" rx="2" fill="rgba(94,234,212,.5)" stroke="#5eead4"/>`;
+      }
+    }
+    if (i % Math.ceil(N/10) === 0) {
+      s += `<text x="${padL-8}" y="${y+rowH/2+4}" text-anchor="end" font-size="11" fill="#b8c5d4" font-family="ui-monospace,monospace">#${i+1}</text>`;
+    }
+  }
+
+  const legY = H - 14;
+  if (WASTE.mode==='off') {
+    s += `
+      <rect x="${padL}" y="${legY-12}" width="14" height="14" fill="rgba(0,212,255,.7)" stroke="#00d4ff"/>
+      <text x="${padL+20}" y="${legY-1}" font-size="13" fill="#b8c5d4" font-family="ui-monospace,monospace">first req prefill</text>
+      <rect x="${padL+180}" y="${legY-12}" width="14" height="14" fill="rgba(255,107,107,.55)" stroke="#ff6b6b"/>
+      <text x="${padL+200}" y="${legY-1}" font-size="13" fill="#ff6b6b" font-family="ui-monospace,monospace" font-weight="600">redundant (wasted)</text>
+      <rect x="${padL+400}" y="${legY-12}" width="14" height="14" fill="rgba(94,234,212,.5)" stroke="#5eead4"/>
+      <text x="${padL+420}" y="${legY-1}" font-size="13" fill="#b8c5d4" font-family="ui-monospace,monospace">unique tail</text>
+    `;
+  } else {
+    s += `
+      <rect x="${padL}" y="${legY-12}" width="14" height="14" fill="rgba(0,212,255,.7)" stroke="#00d4ff"/>
+      <text x="${padL+20}" y="${legY-1}" font-size="13" fill="#b8c5d4" font-family="ui-monospace,monospace">first req (populates cache)</text>
+      <rect x="${padL+260}" y="${legY-12}" width="14" height="14" fill="rgba(192,132,252,.55)" stroke="#a855f7"/>
+      <text x="${padL+280}" y="${legY-1}" font-size="13" fill="#b8c5d4" font-family="ui-monospace,monospace">cache load (NIXL)</text>
+      <rect x="${padL+450}" y="${legY-12}" width="14" height="14" fill="rgba(94,234,212,.5)" stroke="#5eead4"/>
+      <text x="${padL+470}" y="${legY-1}" font-size="13" fill="#b8c5d4" font-family="ui-monospace,monospace">unique tail</text>
+    `;
+  }
+
+  svg.innerHTML = s;
+
+  $('#waste-total').textContent     = fmtMs(WASTE.mode==='off' ? totalOff : totalOn);
+  $('#waste-redundant').textContent = WASTE.mode==='off' ? fmtMs(redundantMs) : '0 ms';
+  $('#waste-tokens').textContent    = WASTE.mode==='off' ? `${tokensRecomputed.toLocaleString()}` : '0';
+  $('#waste-ttft').textContent      = fmtMs(ttftAvg);
+
+  const callout = $('#waste-callout');
+  if (WASTE.mode==='off') {
+    callout.className = 'callout bad';
+    callout.innerHTML = `Without a cache layer, every request re-processes the same <strong>${shared.toLocaleString()}</strong> shared tokens. Across ${N} requests: <strong>${fmtMs(redundantMs)}</strong> of GPU time on work the system already did.`;
+  } else {
+    callout.className = 'callout';
+    callout.innerHTML = `<strong>With LMCache enabled</strong>, only the first request pays full prefill. Subsequent requests pull cached prefix via NIXL and only prefill the unique tail. Average TTFT drops to <strong>${fmtMs(ttftAvg)}</strong>.`;
+  }
+}
+function animateWaste() {
+  if (WASTE.animTimer) clearInterval(WASTE.animTimer);
+  const N = +$('#waste-n').value;
+  WASTE.anim = 0;
+  drawWaste();
+  WASTE.animTimer = setInterval(() => {
+    WASTE.anim++;
+    if (WASTE.anim > N) { clearInterval(WASTE.animTimer); WASTE.anim = N; }
+    drawWaste();
+  }, Math.max(40, 700/N));
+}
+$$('#waste-mode button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('#waste-mode button').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    WASTE.mode = btn.dataset.mode;
+    WASTE.anim = +$('#waste-n').value;
+    drawWaste();
+  });
+});
+['waste-shared','waste-tail','waste-n'].forEach(id => $('#'+id).addEventListener('input', () => {
+  WASTE.anim = +$('#waste-n').value; drawWaste();
+}));
+$('#waste-play').addEventListener('click', animateWaste);
+WASTE.anim = +$('#waste-n').value;
+drawWaste();
+
+/* ==============================================================
+   03 — Architecture & sequence
+   ============================================================== */
+function drawArch() {
+  const svg = $('#arch-svg');
+  svg.innerHTML = `
+    <defs>
+      <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+        <path d="M0,0 L10,5 L0,10 z" fill="#b8c5d4"/>
+      </marker>
+    </defs>
+    <g>
+      <rect x="180" y="14" width="360" height="60" rx="6" fill="#142540" stroke="#234670" stroke-width="1.5"/>
+      <text x="360" y="40" text-anchor="middle" font-size="16" fill="#fff" font-family="ui-monospace,monospace" font-weight="700">Inference Engine</text>
+      <text x="360" y="60" text-anchor="middle" font-size="13" fill="#b8c5d4" font-family="ui-monospace,monospace">vLLM, TensorRT-LLM, etc.</text>
+    </g>
+    <g>
+      <rect x="120" y="106" width="480" height="84" rx="6" fill="#1c3358" stroke="#00d4ff" stroke-width="2.5"/>
+      <text x="360" y="138" text-anchor="middle" font-size="20" fill="#00d4ff" font-family="ui-monospace,monospace" font-weight="800">LMCache</text>
+      <text x="360" y="160" text-anchor="middle" font-size="13" fill="#fff" font-family="ui-monospace,monospace">prefix index · block hashing · policy</text>
+      <text x="360" y="178" text-anchor="middle" font-size="13" fill="#b8c5d4" font-family="ui-monospace,monospace">decides WHAT KV cache to reuse</text>
+    </g>
+    <g>
+      <rect x="120" y="220" width="480" height="84" rx="6" fill="#1c3358" stroke="#00d4ff" stroke-width="2.5"/>
+      <text x="360" y="252" text-anchor="middle" font-size="20" fill="#00d4ff" font-family="ui-monospace,monospace" font-weight="800">NIXL</text>
+      <text x="360" y="274" text-anchor="middle" font-size="13" fill="#fff" font-family="ui-monospace,monospace">buffer-list descriptors · async · zero-copy</text>
+      <text x="360" y="292" text-anchor="middle" font-size="13" fill="#b8c5d4" font-family="ui-monospace,monospace">moves the data WHEREVER it lives</text>
+    </g>
+    <g font-family="ui-monospace,monospace" font-size="12" fill="#fff" font-weight="600">
+      <rect x="40"  y="332" width="84" height="28" rx="4" fill="#142540" stroke="#234670"/>
+      <text x="82"  y="350" text-anchor="middle">UCX/RDMA</text>
+      <rect x="134" y="332" width="78" height="28" rx="4" fill="#142540" stroke="#234670"/>
+      <text x="173" y="350" text-anchor="middle">CUDA IPC</text>
+      <rect x="222" y="332" width="80" height="28" rx="4" fill="#142540" stroke="#234670"/>
+      <text x="262" y="350" text-anchor="middle">Mooncake</text>
+      <rect x="312" y="332" width="80" height="28" rx="4" fill="#142540" stroke="#234670"/>
+      <text x="352" y="350" text-anchor="middle">POSIX I/O</text>
+      <rect x="402" y="332" width="84" height="28" rx="4" fill="#142540" stroke="#234670"/>
+      <text x="444" y="350" text-anchor="middle">Object</text>
+      <rect x="496" y="332" width="84" height="28" rx="4" fill="#142540" stroke="#234670"/>
+      <text x="538" y="350" text-anchor="middle">GPUDirect</text>
+      <rect x="590" y="332" width="92" height="28" rx="4" fill="#142540" stroke="#234670"/>
+      <text x="636" y="350" text-anchor="middle">future…</text>
+    </g>
+    <line x1="360" y1="74"  x2="360" y2="102" stroke="#b8c5d4" stroke-width="1.5" marker-end="url(#arr2)"/>
+    <line x1="360" y1="190" x2="360" y2="216" stroke="#b8c5d4" stroke-width="1.5" marker-end="url(#arr2)"/>
+    <line x1="120" y1="304" x2="82" y2="332"  stroke="#234670"/>
+    <line x1="200" y1="304" x2="173" y2="332" stroke="#234670"/>
+    <line x1="280" y1="304" x2="262" y2="332" stroke="#234670"/>
+    <line x1="360" y1="304" x2="352" y2="332" stroke="#234670"/>
+    <line x1="440" y1="304" x2="444" y2="332" stroke="#234670"/>
+    <line x1="520" y1="304" x2="538" y2="332" stroke="#234670"/>
+    <line x1="600" y1="304" x2="636" y2="332" stroke="#234670"/>
+
+    <!-- VAST Data — concrete storage backend behind POSIX / Object / GPUDirect plugins -->
+    <line x1="352" y1="360" x2="352" y2="386" stroke="#00d4ff" stroke-dasharray="3 2" stroke-width="1.2" opacity="0.75"/>
+    <line x1="444" y1="360" x2="444" y2="386" stroke="#00d4ff" stroke-dasharray="3 2" stroke-width="1.2" opacity="0.75"/>
+    <line x1="538" y1="360" x2="538" y2="386" stroke="#00d4ff" stroke-dasharray="3 2" stroke-width="1.2" opacity="0.75"/>
+
+    <rect x="270" y="386" width="340" height="46" rx="6" fill="rgba(0,212,255,.08)" stroke="#00d4ff" stroke-width="1.5" stroke-dasharray="5 3"/>
+
+    <!-- VAST logo (scaled to ~30px tall) -->
+    <g transform="translate(286, 392) scale(0.32)">
+      <path fill="#FFFFFF" d="m20.9 15.7h15.1c2.6 0.2 4.8-1.5 5.1-4.1 0.3-4.6-0.5-9.7-4.2-9.7h-29.8c-3.6 0-7.1 3.8-5.2 8.7 0.5 1.2 23.4 38.5 27.4 44.4 1.3 1.7 3.3 2.8 5.9 1.6 1.4-0.9 4.8-3 5.5-3.9 1.1-1.3 1.6-2.8 0.5-4.7-1.3-2.2-14.6-23.6-20.3-32.3z"/>
+      <path fill="#1AB7EB" d="m112.6 1.9h-56c-2.8 0-4.5 2.2-4.5 5.9-0.2 3.3 0.1 7.8 4.5 7.9h42.2l-7.6 11.1c-1.2 1.9-0.8 4.1 1 5.6 4.6 3.1 7.7 5.7 10.8 2.1l14.6-23.2c2.2-3.2 0-8.9-5-9.4z"/>
+      <path fill="#FFFFFF" d="m86.7 42c-1.6-0.5-3.9-0.7-5.9 1.7l-21.7 33.7-7.4-12.7c-1.3-2-3.3-3.1-5.3-2.1-1.3 0.5-3.9 2.1-5.5 3.2-1.9 1.4-2.4 3.3-1.5 5.7l14.5 23.6c2.7 4.1 7.8 4.1 9.8 0.8l28.7-44.9c1.1-1.7 1-4.5-1.1-5.8-1.5-1.1-3.5-2.6-4.6-3.2z"/>
+    </g>
+
+    <text x="338" y="406" font-size="13" fill="#fff" font-family="ui-monospace,monospace" font-weight="700">VAST Data</text>
+    <text x="338" y="423" font-size="11" fill="#b8c5d4" font-family="ui-monospace,monospace">unified KV cache storage backend</text>
+  `;
+}
+drawArch();
+
+function drawSeq() {
+  const svg = $('#seq-svg');
+  const W=1400, H=480;
+  const lanes = [
+    { name: 'Engine',   x: 180 },
+    { name: 'LMCache',  x: 540 },
+    { name: 'NIXL',     x: 900 },
+    { name: 'Storage',  x: 1240 },
+  ];
+  let s = '<defs><marker id="arr3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#00d4ff"/></marker></defs>';
+  lanes.forEach(l => {
+    s += `<rect x="${l.x-80}" y="14" width="160" height="42" rx="6" fill="#142540" stroke="#234670" stroke-width="1.5"/>
+          <text x="${l.x}" y="42" text-anchor="middle" font-size="18" fill="#fff" font-family="ui-monospace,monospace" font-weight="800">${l.name}</text>
+          <line x1="${l.x}" y1="58" x2="${l.x}" y2="${H-14}" stroke="#234670" stroke-dasharray="4 4"/>`;
+  });
+  const msgs = [
+    { from:0, to:1, y:100, label:'lookup(prompt_hash)' },
+    { from:1, to:2, y:160, label:'fetch(buffer_list_desc)' },
+    { from:2, to:3, y:220, label:'read chunks (zero-copy)' },
+    { from:3, to:2, y:270, label:'KV blocks' },
+    { from:2, to:1, y:320, label:'materialized in GPU mem' },
+    { from:1, to:0, y:370, label:'ready · skip prefill of N tokens' },
+    { from:0, to:0, y:430, label:'decode → → →', self: true },
+  ];
+  msgs.forEach(m => {
+    if (m.self) {
+      s += `<path d="M ${lanes[m.from].x} ${m.y} q 50 18 0 28" stroke="#5eead4" fill="none" stroke-width="2.5" marker-end="url(#arr3)"/>
+            <text x="${lanes[m.from].x+60}" y="${m.y+16}" font-size="16" fill="#5eead4" font-family="ui-monospace,monospace" font-weight="700">${m.label}</text>`;
+    } else {
+      const x1 = lanes[m.from].x, x2 = lanes[m.to].x;
+      const dir = x2 > x1 ? 1 : -1;
+      s += `<line x1="${x1}" y1="${m.y}" x2="${x2 - dir*5}" y2="${m.y}" stroke="#00d4ff" stroke-width="2.2" marker-end="url(#arr3)"/>
+            <text x="${(x1+x2)/2}" y="${m.y-10}" text-anchor="middle" font-size="16" fill="#fff" font-family="ui-monospace,monospace" font-weight="600">${m.label}</text>`;
+    }
+  });
+  svg.innerHTML = s;
+}
+drawSeq();
+
+/* ==============================================================
+   04 — Examples (RAG, system prompt, multi-turn)
+   ============================================================== */
+function drawExRAG() {
+  const svg = $('#ex-rag-svg');
+  const W=1400, H=360, padL=110;
+  let s = '';
+  const blocks = [
+    { label:'Q1', y:60,  items: [['sys',130,'cyan'],['docA',360,'good'],['docB',360,'good'],['Q1',130,'cyan']] },
+    { label:'Q2', y:220, items: [['sys',130,'cyan-cached'],['docB',360,'good-cached'],['docC',360,'good'],['Q2',130,'cyan']] },
+  ];
+  blocks.forEach(row => {
+    s += `<text x="${padL-16}" y="${row.y+44}" text-anchor="end" font-size="20" fill="#b8c5d4" font-family="ui-monospace,monospace" font-weight="700">${row.label}</text>`;
+    let x = padL;
+    row.items.forEach(([lbl,w,kind]) => {
+      let fill='#1c3358', stroke='#234670', txt='#fff';
+      if (kind==='cyan') { fill='rgba(0,212,255,.2)'; stroke='#00d4ff'; txt='#00d4ff'; }
+      else if (kind==='good') { fill='rgba(94,234,212,.18)'; stroke='#5eead4'; txt='#5eead4'; }
+      else if (kind==='cyan-cached') { fill='rgba(0,212,255,.55)'; stroke='#00d4ff'; txt='#0a1628'; }
+      else if (kind==='good-cached') { fill='rgba(94,234,212,.55)'; stroke='#5eead4'; txt='#0a1628'; }
+      s += `<rect x="${x}" y="${row.y}" width="${w}" height="72" rx="6" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`;
+      s += `<text x="${x+w/2}" y="${row.y+44}" text-anchor="middle" font-size="18" fill="${txt}" font-family="ui-monospace,monospace" font-weight="800">${lbl}</text>`;
+      x += w + 8;
+    });
+  });
+  s += `<text x="${padL}" y="160" font-size="16" fill="#b8c5d4" font-family="ui-monospace,monospace">↑ first time: full prefill, KV cache stored</text>`;
+  s += `<text x="${padL}" y="320" font-size="16" fill="#00d4ff" font-family="ui-monospace,monospace" font-weight="600">↑ second time: solid blocks = cache hit (no recompute)</text>`;
+  svg.innerHTML = s;
+}
+function drawExSys() {
+  const svg = $('#ex-sys-svg');
+  const W=1400, H=360, padL=110;
+  let s = '';
+  const rows = 5;
+  const rowH = 56;
+  for (let i=0;i<rows;i++) {
+    const y = 24 + i*rowH;
+    const cached = i>0;
+    const sysFill = cached ? 'rgba(0,212,255,.55)' : 'rgba(0,212,255,.2)';
+    const sysText = cached ? '#0a1628' : '#00d4ff';
+    s += `<text x="${padL-16}" y="${y+30}" text-anchor="end" font-size="16" fill="#b8c5d4" font-family="ui-monospace,monospace">req ${i+1}</text>`;
+    s += `<rect x="${padL}" y="${y}" width="900" height="44" rx="5" fill="${sysFill}" stroke="#00d4ff" stroke-width="2"/>`;
+    s += `<text x="${padL+450}" y="${y+30}" text-anchor="middle" font-size="16" fill="${sysText}" font-family="ui-monospace,monospace" font-weight="700">system prompt (4,000 tokens)${cached?' — cache hit':''}</text>`;
+    s += `<rect x="${padL+908}" y="${y}" width="260" height="44" rx="5" fill="rgba(94,234,212,.2)" stroke="#5eead4" stroke-width="2"/>`;
+    s += `<text x="${padL+1038}" y="${y+30}" text-anchor="middle" font-size="16" fill="#5eead4" font-family="ui-monospace,monospace" font-weight="700">user query ${i+1}</text>`;
+  }
+  s += `<text x="${padL}" y="${H-12}" font-size="15" fill="#b8c5d4" font-family="ui-monospace,monospace">After request 1, all subsequent requests skip the 4k-token system prompt prefill entirely.</text>`;
+  svg.innerHTML = s;
+}
+function drawExChat() {
+  const svg = $('#ex-chat-svg');
+  const W=1400, H=360, padL=110;
+  let s = '';
+  const segW = 220;
+  const turns = 5;
+  for (let i=0;i<turns;i++) {
+    const y = 16 + i*60;
+    s += `<text x="${padL-16}" y="${y+28}" text-anchor="end" font-size="16" fill="#b8c5d4" font-family="ui-monospace,monospace">turn ${i+1}</text>`;
+    for (let j=0;j<i+1;j++) {
+      const cached = j < i;
+      const fill = cached ? 'rgba(0,212,255,.55)' : 'rgba(94,234,212,.25)';
+      const stroke = cached ? '#00d4ff' : '#5eead4';
+      const txt = cached ? '#0a1628' : '#5eead4';
+      s += `<rect x="${padL + j*(segW+6)}" y="${y}" width="${segW}" height="46" rx="5" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`;
+      s += `<text x="${padL + j*(segW+6) + segW/2}" y="${y+28}" text-anchor="middle" font-size="15" fill="${txt}" font-family="ui-monospace,monospace" font-weight="700">turn ${j+1}${cached?' (cached)':''}</text>`;
+    }
+  }
+  s += `<text x="${padL}" y="${H-12}" font-size="15" fill="#b8c5d4" font-family="ui-monospace,monospace">Each new turn only prefills its own message. Everything before it comes from cache.</text>`;
+  svg.innerHTML = s;
+}
+drawExRAG(); drawExSys(); drawExChat();
+
+$$('#ex-tabs .tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('#ex-tabs .tab').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    const which = btn.dataset.tab;
+    $$('.tab-pane').forEach(p => p.classList.toggle('on', p.dataset.pane === which));
+  });
+});
+
+/* ==============================================================
+   04 — Prefix matching demo (live)
+   ============================================================== */
+const HISTORY = [
+  "You are a helpful assistant. Summarize the following document for the legal team. The contract was signed on March 3rd",
+  "You are a helpful assistant. Summarize the following document for the marketing team in two paragraphs.",
+  "You are a helpful assistant. Translate the following document into French preserving formatting.",
+];
+const tokenize = s => s.trim().split(/(\s+)/).filter(t => t.length>0);
+function commonPrefixLen(a,b){ let i=0; while(i<a.length&&i<b.length&&a[i]===b[i]) i++; return i; }
+
+function renderHistory() {
+  const root = $('#history-prompts');
+  root.innerHTML = '';
+  HISTORY.forEach((p,idx) => {
+    const row = document.createElement('div');
+    row.className = 'prompt-row';
+    const toks = tokenize(p);
+    row.innerHTML = `<div class="label">REQ ${idx+1}</div>
+      <div class="toks">${toks.map(t => t.trim()? `<span class="tok">${escapeHtml(t)}</span>`:'').join('')}</div>`;
+    root.appendChild(row);
+  });
+}
+function renderNewReq() {
+  const text = $('#newreq').value;
+  const toks = tokenize(text).filter(t => t.trim().length>0);
+  let bestHit = 0;
+  HISTORY.forEach(h => {
+    const hToks = tokenize(h).filter(t => t.trim().length>0);
+    bestHit = Math.max(bestHit, commonPrefixLen(toks, hToks));
+  });
+  $('#newreq-toks').innerHTML = toks.map((t,i) =>
+    `<span class="tok ${i<bestHit?'hit':''}">${escapeHtml(t)}</span>`
+  ).join('');
+  const pct = toks.length ? Math.round(100*bestHit/toks.length) : 0;
+  $('#hit-rate').textContent = `${pct}%`;
+  $('#hit-bar').innerHTML = `
+    <rect x="0" y="0" width="240" height="14" rx="3" fill="#142540" stroke="#234670"/>
+    <rect x="0" y="0" width="${(pct/100)*240}" height="14" rx="3" fill="rgba(0,212,255,.7)" stroke="#00d4ff"/>`;
+  const tokenScale = 25;
+  const N = toks.length * tokenScale;
+  const Nhit = bestHit * tokenScale;
+  const saved = Math.max(0, prefillMs(N) - prefillMs(N-Nhit));
+  $('#time-saved').textContent = `≈ ${fmtMs(saved)} of prefill avoided`;
+}
+renderHistory(); renderNewReq();
+$('#newreq').addEventListener('input', renderNewReq);
+
+/* ==============================================================
+   05 — NIXL: buffer list scatter
+   ============================================================== */
+const TIERS = [
+  { id:'gpu', name:'GPU HBM',      cls:'device-gpu', addrFn:i => `dev=gpu0,  addr=0x${(0x7f000000+i*0x4000).toString(16)}` },
+  { id:'cpu', name:'Host RAM',     cls:'device-cpu', addrFn:i => `dev=cpu,   addr=0x${(0x55000000+i*0x4000).toString(16)}` },
+  { id:'ssd', name:'NVMe',         cls:'device-ssd', addrFn:i => `dev=nvme0, offset=0x${(0x100000+i*0x8000).toString(16)}` },
+  { id:'obj', name:'Object store', cls:'device-obj', addrFn:i => `dev=s3,    key="kv/${Math.floor(Math.random()*1e8).toString(16)}"` },
+  { id:'net', name:'Remote node',  cls:'device-net', addrFn:i => `dev=node${(i%4)+2}, addr=0x${(0x9c000000+i*0x4000).toString(16)}` },
+];
+function rngLayout() {
+  const totalChunks = 28;
+  const w = TIERS.map(()=>0.5+Math.random());
+  const sw = w.reduce((a,b)=>a+b,0);
+  const counts = w.map(x => Math.max(1, Math.round((x/sw)*totalChunks)));
+  return TIERS.map((t,i) => {
+    const arr = [];
+    for (let k=0;k<counts[i];k++) arr.push({ width: 18+Math.floor(Math.random()*52), addr: t.addrFn(k) });
+    return { ...t, chunks: arr };
+  });
+}
+function renderBuffer() {
+  const layout = rngLayout();
+  const root = $('#buffer-vis');
+  root.innerHTML = '';
+  layout.forEach(tier => {
+    const row = document.createElement('div');
+    row.className = 'device-row';
+    const chunks = tier.chunks.map(c =>
+      `<span class="chunk ${tier.cls}" style="width:${c.width}px;" title="${c.addr} · len=${c.width*4}KB"></span>`
+    ).join('');
+    row.innerHTML = `<div class="name">${tier.name}</div><div class="chunks">${chunks}</div>`;
+    root.appendChild(row);
+  });
+  const total = layout.reduce((a,t)=>a+t.chunks.length,0);
+  const desc = document.createElement('div');
+  desc.style.cssText = 'margin-top:14px; padding-top:12px; border-top:1px dashed var(--vast-line); font-family:var(--fontmono); font-size:13px; color:var(--vast-silver);';
+  desc.innerHTML = `<span style="color:var(--vast-cyan); font-weight:600">nixl_xfer_desc</span> { entries: ${total}, devices: ${layout.length}, async: true, zero_copy: true }`;
+  root.appendChild(desc);
+}
+renderBuffer();
+$('#shuffle').addEventListener('click', renderBuffer);
+
+/* ==============================================================
+   05 — NIXL design-win visuals: zero-copy + async
+   ============================================================== */
+function drawZeroCopy() {
+  const svg = $('#zerocopy-svg');
+  if (!svg) return;
+  svg.innerHTML = `
+    <defs>
+      <marker id="arrW" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+        <path d="M0,0 L10,5 L0,10 z" fill="#ffb547"/>
+      </marker>
+      <marker id="arrC" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+        <path d="M0,0 L10,5 L0,10 z" fill="#00d4ff"/>
+      </marker>
+    </defs>
+
+    <!-- NAIVE -->
+    <text x="20" y="22" font-size="14" font-weight="700" fill="#ffb547" font-family="ui-monospace,monospace">✗  NAIVE — staged through CPU memory</text>
+
+    <rect x="20" y="48" width="130" height="80" rx="6" fill="#1c3358" stroke="#234670" stroke-width="1.5"/>
+    <text x="85" y="80" text-anchor="middle" font-size="14" fill="#fff" font-family="ui-monospace,monospace" font-weight="600">GPU HBM</text>
+    <text x="85" y="100" text-anchor="middle" font-size="11" fill="#b8c5d4" font-family="ui-monospace,monospace">KV blocks</text>
+
+    <rect x="235" y="48" width="130" height="80" rx="6" fill="#3d2a14" stroke="#ffb547" stroke-width="2"/>
+    <text x="300" y="80" text-anchor="middle" font-size="14" fill="#ffb547" font-family="ui-monospace,monospace" font-weight="600">CPU buffer</text>
+    <text x="300" y="100" text-anchor="middle" font-size="11" fill="#ffb547" font-family="ui-monospace,monospace">extra memcpy</text>
+
+    <rect x="450" y="48" width="130" height="80" rx="6" fill="#1c3358" stroke="#234670" stroke-width="1.5"/>
+    <text x="515" y="80" text-anchor="middle" font-size="14" fill="#fff" font-family="ui-monospace,monospace" font-weight="600">NIC / NVMe</text>
+    <text x="515" y="100" text-anchor="middle" font-size="11" fill="#b8c5d4" font-family="ui-monospace,monospace">destination</text>
+
+    <line x1="150" y1="88" x2="227" y2="88" stroke="#ffb547" stroke-width="2.5" marker-end="url(#arrW)"/>
+    <text x="188" y="80" text-anchor="middle" font-size="11" fill="#ffb547" font-family="ui-monospace,monospace" font-weight="600">copy 1</text>
+
+    <line x1="365" y1="88" x2="442" y2="88" stroke="#ffb547" stroke-width="2.5" marker-end="url(#arrW)"/>
+    <text x="403" y="80" text-anchor="middle" font-size="11" fill="#ffb547" font-family="ui-monospace,monospace" font-weight="600">copy 2</text>
+
+    <text x="300" y="148" text-anchor="middle" font-size="11" fill="#ffb547" font-family="ui-monospace,monospace">2× memory bandwidth, +CPU latency</text>
+
+    <!-- separator -->
+    <line x1="20" y1="170" x2="580" y2="170" stroke="#234670" stroke-dasharray="4 4"/>
+
+    <!-- ZERO-COPY -->
+    <text x="20" y="200" font-size="14" font-weight="700" fill="#00d4ff" font-family="ui-monospace,monospace">✓  NIXL — direct GPU ↔ NIC / NVMe</text>
+
+    <rect x="20" y="226" width="130" height="80" rx="6" fill="#1c3358" stroke="#00d4ff" stroke-width="2.5"/>
+    <text x="85" y="258" text-anchor="middle" font-size="14" fill="#fff" font-family="ui-monospace,monospace" font-weight="600">GPU HBM</text>
+    <text x="85" y="278" text-anchor="middle" font-size="11" fill="#b8c5d4" font-family="ui-monospace,monospace">KV blocks</text>
+
+    <!-- CPU buffer shown faded/skipped -->
+    <rect x="235" y="226" width="130" height="80" rx="6" fill="rgba(28,51,88,.3)" stroke="#234670" stroke-dasharray="4 4"/>
+    <text x="300" y="258" text-anchor="middle" font-size="12" fill="#3a4a64" font-family="ui-monospace,monospace">CPU buffer</text>
+    <text x="300" y="278" text-anchor="middle" font-size="11" fill="#5eead4" font-family="ui-monospace,monospace" font-weight="600">SKIPPED</text>
+
+    <rect x="450" y="226" width="130" height="80" rx="6" fill="#1c3358" stroke="#00d4ff" stroke-width="2.5"/>
+    <text x="515" y="258" text-anchor="middle" font-size="14" fill="#fff" font-family="ui-monospace,monospace" font-weight="600">NIC / NVMe</text>
+    <text x="515" y="278" text-anchor="middle" font-size="11" fill="#b8c5d4" font-family="ui-monospace,monospace">destination</text>
+
+    <!-- Single direct arc over the CPU box -->
+    <path d="M 150 250 Q 300 200 450 250" stroke="#00d4ff" stroke-width="3" fill="none" marker-end="url(#arrC)"/>
+    <text x="300" y="220" text-anchor="middle" font-size="12" fill="#00d4ff" font-family="ui-monospace,monospace" font-weight="700">RDMA · GPUDirect Storage · CUDA IPC · S3-over-RDMA</text>
+
+    <text x="300" y="328" text-anchor="middle" font-size="11" fill="#5eead4" font-family="ui-monospace,monospace">1× memory bandwidth, no CPU stall</text>
+
+    <!-- Requirement callout: RDMA-only -->
+    <rect x="20" y="346" width="560" height="36" rx="5" fill="rgba(255,181,71,.10)" stroke="#ffb547" stroke-dasharray="4 3" stroke-width="1.2"/>
+    <text x="36" y="362" font-size="11" fill="#ffb547" font-family="ui-monospace,monospace" font-weight="700">⚠  REQUIRES RDMA-CAPABLE BACKEND</text>
+    <text x="36" y="376" font-size="10.5" fill="#ffb547" font-family="ui-monospace,monospace">Plain HTTP S3, REST endpoints, or any backend that hits the kernel TCP stack still stages through CPU.</text>
+  `;
+}
+
+function drawAsync() {
+  const svg = $('#async-svg');
+  if (!svg) return;
+  svg.innerHTML = `
+    <!-- BLOCKING -->
+    <text x="20" y="22" font-size="14" font-weight="700" fill="#ffb547" font-family="ui-monospace,monospace">✗  BLOCKING — GPU stalls on every transfer</text>
+
+    <text x="20" y="62" font-size="11" fill="#b8c5d4" font-family="ui-monospace,monospace" font-weight="600">GPU</text>
+    <rect x="80" y="50" width="80" height="22" rx="3" fill="rgba(94,234,212,.7)" stroke="#5eead4" stroke-width="1.5"/>
+    <text x="120" y="65" text-anchor="middle" font-size="10" fill="#0a1628" font-family="ui-monospace,monospace" font-weight="700">compute</text>
+
+    <rect x="160" y="50" width="100" height="22" rx="3" fill="rgba(255,107,107,.18)" stroke="#ff6b6b" stroke-dasharray="4 2" stroke-width="1.5"/>
+    <text x="210" y="65" text-anchor="middle" font-size="10" fill="#ff6b6b" font-family="ui-monospace,monospace" font-weight="700">STALLED</text>
+
+    <rect x="260" y="50" width="80" height="22" rx="3" fill="rgba(94,234,212,.7)" stroke="#5eead4" stroke-width="1.5"/>
+    <text x="300" y="65" text-anchor="middle" font-size="10" fill="#0a1628" font-family="ui-monospace,monospace" font-weight="700">compute</text>
+
+    <rect x="340" y="50" width="100" height="22" rx="3" fill="rgba(255,107,107,.18)" stroke="#ff6b6b" stroke-dasharray="4 2" stroke-width="1.5"/>
+    <text x="390" y="65" text-anchor="middle" font-size="10" fill="#ff6b6b" font-family="ui-monospace,monospace" font-weight="700">STALLED</text>
+
+    <rect x="440" y="50" width="80" height="22" rx="3" fill="rgba(94,234,212,.7)" stroke="#5eead4" stroke-width="1.5"/>
+    <text x="480" y="65" text-anchor="middle" font-size="10" fill="#0a1628" font-family="ui-monospace,monospace" font-weight="700">compute</text>
+
+    <text x="20" y="102" font-size="11" fill="#b8c5d4" font-family="ui-monospace,monospace" font-weight="600">Transfer</text>
+    <rect x="160" y="90" width="100" height="22" rx="3" fill="rgba(192,132,252,.7)" stroke="#a78bfa" stroke-width="1.5"/>
+    <text x="210" y="105" text-anchor="middle" font-size="10" fill="#0a1628" font-family="ui-monospace,monospace" font-weight="700">KV xfer</text>
+    <rect x="340" y="90" width="100" height="22" rx="3" fill="rgba(192,132,252,.7)" stroke="#a78bfa" stroke-width="1.5"/>
+    <text x="390" y="105" text-anchor="middle" font-size="10" fill="#0a1628" font-family="ui-monospace,monospace" font-weight="700">KV xfer</text>
+
+    <!-- total time bar -->
+    <line x1="80" y1="138" x2="520" y2="138" stroke="#ffb547" stroke-width="1.5"/>
+    <line x1="80" y1="132" x2="80" y2="144" stroke="#ffb547" stroke-width="1.5"/>
+    <line x1="520" y1="132" x2="520" y2="144" stroke="#ffb547" stroke-width="1.5"/>
+    <text x="300" y="158" text-anchor="middle" font-size="12" fill="#ffb547" font-family="ui-monospace,monospace" font-weight="600">total = compute + transfer  (sum)</text>
+
+    <!-- separator -->
+    <line x1="20" y1="180" x2="580" y2="180" stroke="#234670" stroke-dasharray="4 4"/>
+
+    <!-- ASYNC -->
+    <text x="20" y="208" font-size="14" font-weight="700" fill="#00d4ff" font-family="ui-monospace,monospace">✓  NIXL ASYNC — compute and transfer overlap</text>
+
+    <text x="20" y="248" font-size="11" fill="#b8c5d4" font-family="ui-monospace,monospace" font-weight="600">GPU</text>
+    <rect x="80" y="236" width="240" height="22" rx="3" fill="rgba(94,234,212,.7)" stroke="#5eead4" stroke-width="1.5"/>
+    <text x="200" y="251" text-anchor="middle" font-size="10" fill="#0a1628" font-family="ui-monospace,monospace" font-weight="700">compute (no stalls)</text>
+
+    <text x="20" y="288" font-size="11" fill="#b8c5d4" font-family="ui-monospace,monospace" font-weight="600">Transfer</text>
+    <rect x="120" y="276" width="100" height="22" rx="3" fill="rgba(192,132,252,.7)" stroke="#a78bfa" stroke-width="1.5"/>
+    <text x="170" y="291" text-anchor="middle" font-size="10" fill="#0a1628" font-family="ui-monospace,monospace" font-weight="700">KV xfer</text>
+    <rect x="220" y="276" width="100" height="22" rx="3" fill="rgba(192,132,252,.7)" stroke="#a78bfa" stroke-width="1.5"/>
+    <text x="270" y="291" text-anchor="middle" font-size="10" fill="#0a1628" font-family="ui-monospace,monospace" font-weight="700">KV xfer</text>
+
+    <line x1="80" y1="320" x2="320" y2="320" stroke="#00d4ff" stroke-width="1.5"/>
+    <line x1="80" y1="314" x2="80" y2="326" stroke="#00d4ff" stroke-width="1.5"/>
+    <line x1="320" y1="314" x2="320" y2="326" stroke="#00d4ff" stroke-width="1.5"/>
+    <text x="200" y="338" text-anchor="middle" font-size="12" fill="#00d4ff" font-family="ui-monospace,monospace" font-weight="600">total = max(compute, transfer)  (much shorter)</text>
+  `;
+}
+drawZeroCopy();
+drawAsync();
+
+/* ==============================================================
+   Storage offload benchmark chart (recreates the slide from the talk)
+   ============================================================== */
+function drawBenchReal() {
+  const svg = $('#bench-real');
+  if (!svg) return;
+  const W = 720, H = 480, padL = 70, padR = 70, padT = 24, padB = 56;
+  const innerW = W - padL - padR, innerH = H - padT - padB;
+
+  // Data: ISL in thousands of tokens, TTFT in seconds (read off the original chart)
+  const dataKVComp = [
+    [1, 1.4], [2, 1.4], [8, 1.8], [16, 2.5], [24, 3.5], [32, 4.8],
+    [48, 6.2], [64, 8.0], [96, 8.3], [128, 16.5], [192, 27.0], [224, 36.0]
+  ];
+  const dataKVRet = [
+    [1, 0.1], [2, 0.1], [8, 0.2], [16, 0.3], [24, 0.5], [32, 0.7],
+    [48, 1.0], [64, 1.2], [96, 1.5], [128, 2.0], [192, 3.2], [224, 3.7]
+  ];
+
+  const yMax = 38;
+  const xMin = 1, xMax = 224;
+  const xTo = x => padL + innerW * (Math.log(x) - Math.log(xMin)) / (Math.log(xMax) - Math.log(xMin));
+  const yTo = y => padT + innerH * (1 - y / yMax);
+
+  let s = '';
+  // Y-axis grid + labels
+  for (let v = 0; v <= 35; v += 5) {
+    const y = yTo(v);
+    s += `<line x1="${padL}" x2="${W-padR}" y1="${y}" y2="${y}" stroke="#234670" opacity="0.35"/>`;
+    s += `<text x="${padL-10}" y="${y+4}" text-anchor="end" font-size="12" fill="#b8c5d4" font-family="ui-monospace,monospace">${v}</text>`;
+  }
+  s += `<text x="22" y="${padT+innerH/2}" font-size="13" fill="#b8c5d4" font-family="ui-monospace,monospace" font-weight="600" transform="rotate(-90 22 ${padT+innerH/2})">TTFT (seconds)</text>`;
+
+  // X-axis ticks (log scale)
+  const xTicks = [1, 2, 8, 16, 32, 64, 128, 224];
+  xTicks.forEach(x => {
+    const xp = xTo(x);
+    s += `<line x1="${xp}" x2="${xp}" y1="${H-padB}" y2="${H-padB+5}" stroke="#234670"/>`;
+    s += `<text x="${xp}" y="${H-padB+22}" text-anchor="middle" font-size="12" fill="#b8c5d4" font-family="ui-monospace,monospace">${x}</text>`;
+  });
+  s += `<text x="${(padL+W-padR)/2}" y="${H-10}" text-anchor="middle" font-size="13" fill="#b8c5d4" font-family="ui-monospace,monospace" font-weight="600">Input Sequence Length (k tokens, log scale)</text>`;
+
+  // Axes
+  s += `<line x1="${padL}" x2="${W-padR}" y1="${H-padB}" y2="${H-padB}" stroke="#234670" stroke-width="1.5"/>`;
+  s += `<line x1="${padL}" x2="${padL}" y1="${padT}" y2="${H-padB}" stroke="#234670" stroke-width="1.5"/>`;
+
+  // Plot lines
+  const compPath = dataKVComp.map((d, i) => `${i===0?'M':'L'} ${xTo(d[0])} ${yTo(d[1])}`).join(' ');
+  const retPath  = dataKVRet.map((d, i) => `${i===0?'M':'L'} ${xTo(d[0])} ${yTo(d[1])}`).join(' ');
+
+  s += `<path d="${compPath}" fill="none" stroke="#3b82f6" stroke-width="2.8"/>`;
+  dataKVComp.forEach(d => {
+    s += `<circle cx="${xTo(d[0])}" cy="${yTo(d[1])}" r="4.5" fill="#3b82f6" stroke="#0a1628" stroke-width="1.5"/>`;
+  });
+  s += `<path d="${retPath}" fill="none" stroke="#f59e0b" stroke-width="2.8"/>`;
+  dataKVRet.forEach(d => {
+    s += `<circle cx="${xTo(d[0])}" cy="${yTo(d[1])}" r="4.5" fill="#f59e0b" stroke="#0a1628" stroke-width="1.5"/>`;
+  });
+
+  // Annotation: highlight the 224k gap
+  const gapX = xTo(224);
+  const gapY1 = yTo(36);
+  const gapY2 = yTo(3.7);
+  const ratio = (36 / 3.7).toFixed(0);
+  s += `<line x1="${gapX+18}" x2="${gapX+18}" y1="${gapY1}" y2="${gapY2}" stroke="#00d4ff" stroke-dasharray="4 3" stroke-width="1.8"/>`;
+  s += `<line x1="${gapX+13}" x2="${gapX+23}" y1="${gapY1}" y2="${gapY1}" stroke="#00d4ff" stroke-width="1.8"/>`;
+  s += `<line x1="${gapX+13}" x2="${gapX+23}" y1="${gapY2}" y2="${gapY2}" stroke="#00d4ff" stroke-width="1.8"/>`;
+  s += `<text x="${gapX+28}" y="${(gapY1+gapY2)/2-2}" font-size="15" fill="#00d4ff" font-family="ui-monospace,monospace" font-weight="800">~${ratio}×</text>`;
+  s += `<text x="${gapX+28}" y="${(gapY1+gapY2)/2+14}" font-size="11" fill="#00d4ff" font-family="ui-monospace,monospace">faster TTFT</text>`;
+  s += `<text x="${gapX+28}" y="${(gapY1+gapY2)/2+28}" font-size="11" fill="#00d4ff" font-family="ui-monospace,monospace">at 224k tok</text>`;
+
+  svg.innerHTML = s;
+}
+drawBenchReal();
+
+/* YouTube section uses plain anchor links — no JS needed.
+   The iframe-embed approach was abandoned because sandboxed preview
+   contexts (file://, Claude Code preview panel) trigger Error 153
+   regardless of the embed URL configuration. */
+</script>
+</body>
+</html>
