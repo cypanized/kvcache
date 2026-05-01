@@ -436,7 +436,7 @@
   .legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -1px; margin-right: 6px; }
 
   /* ===== Tabs ===== */
-  .tabs { display: flex; gap: 8px; flex-wrap: wrap; flex-shrink: 0; padding-bottom: 4px; }
+  .tabs { display: flex; gap: 8px; flex-wrap: wrap; flex-shrink: 0; padding-bottom: 4px; justify-content: center; }
   .tab {
     background: var(--vast-deep-blue); color: var(--vast-silver);
     border: 1px solid var(--vast-line); border-radius: 4px;
@@ -2401,7 +2401,7 @@ drawSeq();
    ============================================================== */
 function drawExRAG() {
   const svg = $('#ex-rag-svg');
-  const W=1400, H=360, padL=110;
+  const W=1400, H=360, padL=200;  // content width ~1004 → padL 200 centers it
   let s = '';
   const blocks = [
     { label:'Q1', y:60,  items: [['sys',130,'cyan'],['docA',360,'good'],['docB',360,'good'],['Q1',130,'cyan']] },
@@ -2427,7 +2427,7 @@ function drawExRAG() {
 }
 function drawExSys() {
   const svg = $('#ex-sys-svg');
-  const W=1400, H=360, padL=110;
+  const W=1400, H=360, padL=116;  // content width 1168 → padL 116 centers it
   let s = '';
   const rows = 5;
   const rowH = 56;
@@ -2447,7 +2447,7 @@ function drawExSys() {
 }
 function drawExChat() {
   const svg = $('#ex-chat-svg');
-  const W=1400, H=360, padL=110;
+  const W=1400, H=360, padL=138;  // longest row width 1124 → padL 138 centers it
   let s = '';
   const segW = 220;
   const turns = 5;
