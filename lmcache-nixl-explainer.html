@@ -1084,44 +1084,25 @@
     <div class="slide-body">
       <div class="grid-2" style="flex: 0 0 auto;">
         <div class="panel">
-          <h3 class="section-h" style="font-size:16px;">What it is</h3>
+          <h3 class="section-h" style="font-size:14px;">What it is</h3>
           <ul class="checklist">
             <li>Sits next to the inference engine (e.g. vLLM)</li>
-            <li>Maintains an <strong>index</strong> of KV cache blocks, keyed by hash of the token prefix that produced them</li>
+            <li>Maintains an <strong>index</strong> of KV blocks keyed by token-prefix hash</li>
             <li>On each prompt, finds the longest matching prefix and asks NIXL to materialize those blocks into GPU memory</li>
-            <li>If a request misses, the engine prefills normally — and LMCache <em>captures</em> the resulting KV blocks for next time</li>
           </ul>
         </div>
         <div class="panel">
-          <h3 class="section-h" style="font-size:16px;">What it does</h3>
+          <h3 class="section-h" style="font-size:14px;">What it does</h3>
           <ul class="checklist">
             <li>Eliminates redundant prefill across requests with shared prefixes</li>
-            <li>Drops time-to-first-token dramatically on long, repeated contexts</li>
-            <li>Enables prefill / decode disaggregation: one machine prefills, another decodes — using the cache as the handoff</li>
-            <li>Supports multi-tenant policies through the lookup key (include tenant ID for isolation, omit it to share)</li>
+            <li>Drops TTFT dramatically on long, repeated contexts</li>
+            <li>Enables prefill / decode disaggregation across machines via the cache</li>
           </ul>
         </div>
       </div>
-      <div class="panel" style="display:flex; flex-direction:column; gap:10px; flex: 1 1 auto; min-height: 0;">
-        <h3 class="section-h" style="font-size:13px;">Tiering — where blocks actually live</h3>
-        <svg id="tier-svg" viewBox="0 0 1300 250" preserveAspectRatio="xMidYMid meet" style="width:100%; flex:1; min-height:0;"></svg>
-        <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:14px; font-size:12px; line-height:1.4;">
-          <div>
-            <span style="color:var(--vast-cyan); font-family:var(--fontmono); font-size:10px; text-transform:uppercase; letter-spacing:.12em; font-weight:700;">Insertion</span>
-            <p style="margin:2px 0 0;">Newly prefilled blocks land in the fastest tier with capacity.</p>
-          </div>
-          <div>
-            <span style="color:var(--vast-warn); font-family:var(--fontmono); font-size:10px; text-transform:uppercase; letter-spacing:.12em; font-weight:700;">Demotion · LRU</span>
-            <p style="margin:2px 0 0;">When a tier fills, least-recently-used blocks spill <em>down</em> via NIXL — not dropped.</p>
-          </div>
-          <div>
-            <span style="color:var(--vast-good); font-family:var(--fontmono); font-size:10px; text-transform:uppercase; letter-spacing:.12em; font-weight:700;">Promotion · on hit</span>
-            <p style="margin:2px 0 0;">Cold-tier hits get pulled back into GPU memory; warm-staying is configurable.</p>
-          </div>
-        </div>
-        <p style="margin:0; color:var(--vast-silver); font-size:11.5px; line-height:1.4;">
-          Placement is intentionally simple — <strong>recency + capacity</strong>. The smart parts are the prefix-hash lookup and NIXL's cross-tier movement. Operators tune capacity per tier, write-through behavior, chunk size, and tenant-key composition.
-        </p>
+      <div class="panel" style="display:flex; flex-direction:column; gap:6px; flex: 1 1 auto; min-height: 0; padding: 14px 20px;">
+        <h3 class="section-h" style="font-size:13px; margin:0;">Tiering — where blocks actually live (and how they move)</h3>
+        <svg id="tier-svg" viewBox="0 0 1300 320" preserveAspectRatio="xMidYMid meet" style="width:100%; flex:1; min-height:0;"></svg>
       </div>
     </div>
   </section>
@@ -2302,13 +2283,17 @@ drawArch();
 function drawTiering() {
   const svg = $('#tier-svg');
   if (!svg) return;
-  // viewBox 1300x250. Wider gaps so demote labels never overlap boxes.
+  // viewBox 1300x320 — chosen so SVG fills the panel width in present mode.
+  // All annotations (insertion / demote / promote / evict) baked into the SVG.
   const tiers = [
-    { name: 'GPU HBM',                  sub: 'fastest, smallest',  x: 40,  w: 200 },
-    { name: 'Host RAM',                 sub: '~10× larger',        x: 340, w: 200 },
-    { name: 'Local NVMe',               sub: '~10× larger',        x: 640, w: 200 },
-    { name: 'Remote · RDMA / Object',   sub: 'slowest, largest',   x: 940, w: 320 },
+    { name: 'GPU HBM',                sub: 'fastest, smallest',  x: 40,  w: 230 },
+    { name: 'Host RAM',               sub: '~10× larger',        x: 350, w: 230 },
+    { name: 'Local NVMe',             sub: '~10× larger',        x: 660, w: 230 },
+    { name: 'Remote · RDMA / Object', sub: 'slowest, largest',   x: 970, w: 290 },
   ];
+  const boxY = 102, boxH = 110;
+  const boxMidY = boxY + boxH/2;
+
   let s = `
     <defs>
       <marker id="tArrW" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
@@ -2317,43 +2302,55 @@ function drawTiering() {
       <marker id="tArrG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
         <path d="M0,0 L10,5 L0,10 z" fill="#5eead4"/>
       </marker>
+      <marker id="tArrR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+        <path d="M0,0 L10,5 L0,10 z" fill="#ff6b6b"/>
+      </marker>
     </defs>
 
-    <!-- Insertion arrow into GPU HBM -->
-    <line x1="140" y1="20" x2="140" y2="66" stroke="#5eead4" stroke-width="2.5" marker-end="url(#tArrG)"/>
-    <text x="150" y="38" font-size="14" fill="#5eead4" font-family="ui-monospace,monospace" font-weight="700">new prefilled blocks insert here</text>
+    <!-- INSERTION (top) -->
+    <text x="${tiers[0].x + tiers[0].w/2}" y="26" text-anchor="middle" font-size="13" fill="#5eead4" font-family="ui-monospace,monospace" font-weight="700" letter-spacing="2">INSERTION</text>
+    <text x="${tiers[0].x + tiers[0].w/2}" y="50" text-anchor="middle" font-size="13" fill="#b8c5d4" font-family="ui-monospace,monospace">newly prefilled blocks → fastest tier with capacity</text>
+    <line x1="${tiers[0].x + tiers[0].w/2}" y1="62" x2="${tiers[0].x + tiers[0].w/2}" y2="${boxY - 4}" stroke="#5eead4" stroke-width="3" marker-end="url(#tArrG)"/>
   `;
-  // tier boxes (y=70, h=80, bottom=150)
+
+  // tier boxes
   tiers.forEach(t => {
     s += `
-      <rect x="${t.x}" y="70" width="${t.w}" height="80" rx="8" fill="rgba(0,212,255,0.10)" stroke="#00d4ff" stroke-width="2"/>
-      <text x="${t.x + t.w/2}" y="103" text-anchor="middle" font-size="17" fill="#fff" font-family="ui-monospace,monospace" font-weight="700">${t.name}</text>
-      <text x="${t.x + t.w/2}" y="126" text-anchor="middle" font-size="12" fill="#b8c5d4" font-family="ui-monospace,monospace">${t.sub}</text>
+      <rect x="${t.x}" y="${boxY}" width="${t.w}" height="${boxH}" rx="8" fill="rgba(0,212,255,0.10)" stroke="#00d4ff" stroke-width="2"/>
+      <text x="${t.x + t.w/2}" y="${boxY + 50}" text-anchor="middle" font-size="22" fill="#fff" font-family="ui-monospace,monospace" font-weight="800">${t.name}</text>
+      <text x="${t.x + t.w/2}" y="${boxY + 80}" text-anchor="middle" font-size="14" fill="#b8c5d4" font-family="ui-monospace,monospace">${t.sub}</text>
     `;
   });
-  // demote-LRU arrows between tiers (label split across two lines so it fits in the 100px gap)
+
+  // demote arrows between tiers — short label that fits inside the 80px gap
   for (let i = 0; i < tiers.length - 1; i++) {
     const x1 = tiers[i].x + tiers[i].w;
     const x2 = tiers[i+1].x;
     const cx = (x1 + x2) / 2;
     s += `
-      <line x1="${x1 + 6}" y1="110" x2="${x2 - 8}" y2="110" stroke="#ffb547" stroke-width="2.5" marker-end="url(#tArrW)"/>
-      <text x="${cx}" y="98" text-anchor="middle" font-size="12" fill="#ffb547" font-family="ui-monospace,monospace" font-weight="700">demote</text>
-      <text x="${cx}" y="130" text-anchor="middle" font-size="11" fill="#ffb547" font-family="ui-monospace,monospace">(LRU)</text>
+      <line x1="${x1 + 6}" y1="${boxMidY}" x2="${x2 - 8}" y2="${boxMidY}" stroke="#ffb547" stroke-width="3" marker-end="url(#tArrW)"/>
+      <text x="${cx}" y="${boxMidY - 12}" text-anchor="middle" font-size="11" fill="#ffb547" font-family="ui-monospace,monospace" font-weight="700">DEMOTE</text>
+      <text x="${cx}" y="${boxMidY + 22}" text-anchor="middle" font-size="10" fill="#ffb547" font-family="ui-monospace,monospace">LRU</text>
     `;
   }
-  // evict drop after rightmost tier
+
+  // evict at right edge — label sits just outside the rightmost box, vertically centered on the arrow
   const lastRight = tiers[tiers.length-1].x + tiers[tiers.length-1].w;
   s += `
-    <line x1="${lastRight + 4}" y1="110" x2="${lastRight + 32}" y2="110" stroke="#ff6b6b" stroke-width="2" stroke-dasharray="3 2"/>
-    <text x="${lastRight + 14}" y="132" font-size="11" fill="#ff6b6b" font-family="ui-monospace,monospace" font-weight="700">evict</text>
+    <line x1="${lastRight + 6}" y1="${boxMidY}" x2="${lastRight + 32}" y2="${boxMidY}" stroke="#ff6b6b" stroke-width="2.5" stroke-dasharray="4 3" marker-end="url(#tArrR)"/>
+    <text x="${lastRight + 19}" y="${boxMidY - 12}" text-anchor="middle" font-size="11" fill="#ff6b6b" font-family="ui-monospace,monospace" font-weight="700">EVICT</text>
   `;
-  // promotion: curved arrow from cold tier back to GPU HBM (well below boxes)
+
+  // PROMOTION (below boxes)
+  const promY = boxY + boxH + 6;
+  const apexY = promY + 50;
   s += `
-    <path d="M ${tiers[3].x + 100} 165 Q 660 235 ${tiers[0].x + tiers[0].w/2} 165"
-          stroke="#5eead4" stroke-width="2.5" fill="none" marker-end="url(#tArrG)"/>
-    <text x="650" y="240" text-anchor="middle" font-size="14" fill="#5eead4" font-family="ui-monospace,monospace" font-weight="700">promote back to GPU on cache hit (via NIXL)</text>
+    <path d="M ${tiers[3].x + 80} ${promY} Q 650 ${apexY} ${tiers[0].x + tiers[0].w/2} ${promY}"
+          stroke="#5eead4" stroke-width="3" fill="none" marker-end="url(#tArrG)"/>
+    <text x="650" y="${apexY + 30}" text-anchor="middle" font-size="13" fill="#5eead4" font-family="ui-monospace,monospace" font-weight="700" letter-spacing="2">PROMOTION · ON HIT</text>
+    <text x="650" y="${apexY + 50}" text-anchor="middle" font-size="12" fill="#b8c5d4" font-family="ui-monospace,monospace">cold-tier hits pulled back to GPU via NIXL · warm-staying is configurable</text>
   `;
+
   svg.innerHTML = s;
 }
 drawTiering();
