@@ -195,6 +195,33 @@
     border: 1px solid var(--vast-cyan); border-radius: 4px;
     background: rgba(0,212,255,.08); margin: 0 5px;
   }
+  .title-slide .byline {
+    margin-top: 32px;
+    font-family: var(--fontmono);
+    font-size: 16px;
+    color: var(--vast-silver);
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .title-slide .byline .byline-name {
+    color: var(--vast-cyan);
+    font-weight: 700;
+    letter-spacing: .14em;
+  }
+
+  /* Per-slide footer note — subtle attribution shown on every slide */
+  .slide:not(.title-slide)::after {
+    content: "Wong Tran · LMCache + NIXL explainer";
+    position: absolute;
+    right: 60px;
+    bottom: 12px;
+    font-family: var(--fontmono);
+    font-size: 11px;
+    color: var(--vast-silver);
+    opacity: 0.45;
+    letter-spacing: .1em;
+    pointer-events: none;
+  }
 
   /* ===== Definition cards ===== */
   .def {
@@ -409,15 +436,20 @@
   .legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -1px; margin-right: 6px; }
 
   /* ===== Tabs ===== */
-  .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--vast-line); flex-wrap: wrap; flex-shrink: 0; }
+  .tabs { display: flex; gap: 8px; flex-wrap: wrap; flex-shrink: 0; padding-bottom: 4px; }
   .tab {
-    background: transparent; color: var(--vast-silver); border: none;
-    padding: 10px 18px; font-family: var(--fontmono); font-size: 13px;
-    cursor: pointer; border-bottom: 3px solid transparent;
-    text-transform: uppercase; letter-spacing: .1em; font-weight: 600;
+    background: var(--vast-deep-blue); color: var(--vast-silver);
+    border: 1px solid var(--vast-line); border-radius: 4px;
+    padding: 9px 18px; font-family: var(--fontmono); font-size: 13px;
+    cursor: pointer; text-transform: uppercase; letter-spacing: .1em; font-weight: 600;
+    transition: all .15s ease;
   }
-  .tab:hover { color: var(--vast-white); }
-  .tab.on { color: var(--vast-cyan); border-bottom-color: var(--vast-cyan); }
+  .tab:hover { color: var(--vast-cyan); border-color: var(--vast-cyan); background: rgba(0,212,255,0.08); }
+  .tab.on {
+    color: var(--vast-deep-blue); background: var(--vast-cyan); border-color: var(--vast-cyan);
+    box-shadow: 0 0 14px rgba(0,212,255,0.35);
+  }
+  .tab.on:hover { color: var(--vast-deep-blue); background: var(--vast-cyan); }
   .tab-pane { display: none; padding-top: 16px; flex: 1; min-height: 0; overflow: auto; }
   .tab-pane.on { display: flex; flex-direction: column; gap: 14px; }
 
@@ -474,11 +506,21 @@
   .panel::-webkit-scrollbar, .tab-pane::-webkit-scrollbar, .overview::-webkit-scrollbar { width: 8px; height: 8px; }
   .panel::-webkit-scrollbar-thumb, .tab-pane::-webkit-scrollbar-thumb, .overview::-webkit-scrollbar-thumb { background: var(--vast-line); border-radius: 4px; }
 
-  /* Slide 4 (LMCache, in detail) — compact so all three panels fit inside the 900px canvas */
-  section[data-slide="5"] .panel { padding: 14px 18px; }
-  section[data-slide="5"] ul.checklist li { padding: 5px 0 5px 22px; font-size: 13px; line-height: 1.4; }
-  section[data-slide="5"] ul.checklist li::before { top: 5px; font-size: 14px; }
-  section[data-slide="5"] h3.section-h { font-size: 13px; }
+  /* Slide 8 (LMCache, in detail) — compact so all three panels fit inside the 900px canvas */
+  section[data-slide="7"] .panel { padding: 14px 18px; }
+  section[data-slide="7"] ul.checklist li { padding: 5px 0 5px 22px; font-size: 13px; line-height: 1.4; }
+  section[data-slide="7"] ul.checklist li::before { top: 5px; font-size: 14px; }
+  section[data-slide="7"] h3.section-h { font-size: 13px; }
+
+  /* Slide 5 (Paged attention with sharing) — compact right column so both explainer panels fit */
+  section[data-slide="4"] .stack .panel { padding: 14px 18px; }
+  section[data-slide="4"] .stack ul.checklist li { padding: 6px 0 6px 22px; font-size: 13px; line-height: 1.4; }
+  section[data-slide="4"] .stack ul.checklist li::before { top: 6px; font-size: 14px; }
+
+  /* Slide 15 (Recap) — tighten cards so 3 bullets fit comfortably */
+  section[data-slide="14"] ul.checklist li { padding: 5px 0 5px 22px; font-size: 13px; line-height: 1.4; }
+  section[data-slide="14"] ul.checklist li::before { top: 5px; font-size: 14px; }
+  section[data-slide="14"] ul.checklist li:last-child { border-bottom: none; }
 
   /* ===== YouTube thumbnail card ===== */
   .yt-thumb {
@@ -688,7 +730,7 @@
   </div>
   <div class="spacer"></div>
   <div class="progress"><div id="progress-bar"></div></div>
-  <span class="counter" id="counter">1 / 12</span>
+  <span class="counter" id="counter">1 / 15</span>
 </header>
 
 <main class="deck" id="deck">
@@ -711,6 +753,7 @@
       before it can write a single token. <strong>LMCache</strong> reuses that work across requests.
       <strong>NIXL</strong> moves it across whatever storage and network you have.
     </p>
+    <div class="byline">by <span class="byline-name">Wong Tran</span></div>
     <div class="start">Press <kbd>→</kbd> to begin · <kbd>O</kbd> for overview · <kbd>F</kbd> for fullscreen</div>
   </section>
 
@@ -828,12 +871,153 @@
   </section>
 
   <!-- ============================================================ -->
-  <!-- SLIDE 4 — Together: who decides, who moves -->
+  <!-- SLIDE 4 — Slab to pages: the conversion -->
   <!-- ============================================================ -->
   <section class="slide" data-slide="3">
     <div class="slide-head">
       <div class="accent-bar"></div>
-      <div class="slide-eyebrow">03 · The two layers</div>
+      <div class="slide-eyebrow">03 · Inside the engine</div>
+      <h2 class="slide-title">From slab to pages — what paged attention actually does</h2>
+      <p class="slide-sub">One request's KV cache, before and after. <em>Same data, same number of bytes</em> — but the new organization is what every layer above (LMCache, NIXL, prefix sharing) is built on.</p>
+    </div>
+    <div class="slide-body">
+      <div class="panel bare" style="display:flex; flex-direction:column; gap:14px; flex:1; min-height:0;">
+        <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+          <h3 class="section-h" style="margin:0;">One request · 16 tokens of KV cache</h3>
+          <button id="conv-play" class="btn-ghost">▶  Replay conversion</button>
+        </div>
+        <svg id="conv-svg" viewBox="0 0 1300 320" preserveAspectRatio="xMidYMid meet" style="flex:1; min-height:0;"></svg>
+      </div>
+      <div class="grid-2" style="flex: 0 0 auto;">
+        <div class="panel" style="padding: 14px 18px;">
+          <h3 class="section-h" style="font-size: 14px;">What the engine actually changes</h3>
+          <ul class="checklist" style="font-size: 13px; line-height: 1.45;">
+            <li>Same KV tensors, same total bytes — only the <strong>organization</strong> changes.</li>
+            <li>KV is laid out in a pool of <strong>fixed-size blocks</strong> (vLLM default: 16 tokens per block; we draw 4 here for clarity).</li>
+            <li>Each request keeps a <strong>block table</strong>: an array of physical block IDs, indexed by logical position.</li>
+          </ul>
+        </div>
+        <div class="panel" style="padding: 14px 18px;">
+          <h3 class="section-h" style="font-size: 14px;">What that unlocks</h3>
+          <ul class="checklist" style="font-size: 13px; line-height: 1.45;">
+            <li><strong>Hash &amp; index</strong> any block by the prefix that produced it → <span style="color:var(--vast-cyan); font-weight:600;">LMCache lookups</span></li>
+            <li><strong>Move</strong> any block to GPU / CPU / disk / network independently → <span style="color:var(--vast-cyan); font-weight:600;">NIXL transfers</span></li>
+            <li><strong>Share</strong> a block by reference between requests → <span style="color:var(--vast-cyan); font-weight:600;">prefix sharing</span></li>
+            <li><strong>Evict</strong> at block granularity instead of dropping a whole slab</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SLIDE 5 — Paged attention -->
+  <!-- ============================================================ -->
+  <section class="slide" data-slide="4">
+    <div class="slide-head">
+      <div class="accent-bar"></div>
+      <div class="slide-eyebrow">03 · Inside the engine</div>
+      <h2 class="slide-title">Paged attention — KV memory in pages, not slabs</h2>
+      <p class="slide-sub">Before LMCache or NIXL come into play, the inference engine itself splits KV memory into fixed-size blocks. That partitioning is what makes blocks <em>shareable</em>, <em>hashable</em>, and addressable enough for an external cache to exist at all.</p>
+    </div>
+    <div class="slide-body">
+      <div class="grid-3-1">
+        <div class="panel bare" style="display:flex; flex-direction:column; gap:10px; min-height:0;">
+          <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+            <h3 class="section-h" style="margin:0;">Three requests · shared system prompt · different tails</h3>
+            <div class="toggles" id="paged-mode">
+              <button data-mode="contiguous">Contiguous slabs (pre-paged)</button>
+              <button data-mode="paged" class="on">Paged blocks</button>
+            </div>
+          </div>
+          <svg id="paged-svg" viewBox="0 0 1300 440" preserveAspectRatio="xMidYMid meet" style="flex:1; min-height:0;"></svg>
+          <div class="stat-grid" style="grid-template-columns: repeat(3, 1fr);">
+            <div class="box"><div class="k">Physical KV slots used</div><div class="v" id="paged-stat-used">—</div></div>
+            <div class="box"><div class="k">Reserved but empty</div><div class="v" id="paged-stat-reserved" style="color:var(--vast-bad)">—</div></div>
+            <div class="box"><div class="k">Slots shared across requests</div><div class="v" id="paged-stat-shared" style="color:var(--vast-good)">—</div></div>
+          </div>
+          <div class="callout" id="paged-callout"></div>
+        </div>
+        <div class="stack">
+          <div class="panel">
+            <h3 class="section-h" style="font-size:16px;">Why pages, not slabs</h3>
+            <ul class="checklist">
+              <li>Pre-paged engines reserved a contiguous slab per request, sized to <em>max</em> sequence length. Most of it sat empty.</li>
+              <li>vLLM's <strong>paged attention</strong> treats KV memory like virtual memory: fixed-size blocks (typically 16 tokens), allocated on demand.</li>
+              <li>A per-request <strong>block table</strong> maps logical token positions → physical block IDs — same indirection as a CPU page table.</li>
+              <li>Multiple requests can point at the same physical block. Prefix sharing happens inside one engine.</li>
+            </ul>
+          </div>
+          <div class="panel">
+            <h3 class="section-h" style="font-size:16px;">Why this matters here</h3>
+            <ul class="checklist">
+              <li><strong>LMCache</strong> hashes blocks by the prefix that produced them — only meaningful because blocks are fixed-size, addressable, and content-stable.</li>
+              <li><strong>NIXL</strong> transfers blocks between tiers — only tractable because a block is a uniform-sized unit, not a per-request slab.</li>
+              <li>Paged attention is the substrate. LMCache and NIXL extend it across requests, machines, and storage.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SLIDE 6 — Paged attention at scale -->
+  <!-- ============================================================ -->
+  <section class="slide" data-slide="5">
+    <div class="slide-head">
+      <div class="accent-bar"></div>
+      <div class="slide-eyebrow">03 · Inside the engine — at scale</div>
+      <h2 class="slide-title">Why pages matter — memory you can actually use</h2>
+      <p class="slide-sub">Pre-paged engines reserved memory for the <em>worst case</em> — every request got a full <code class="mono">max_seq_len</code> slab whether it used it or not. Paged attention reserves only what's used, so the same GPU fits many more concurrent requests. Move the sliders.</p>
+    </div>
+    <div class="slide-body">
+      <div class="panel" style="padding: 14px 20px; flex: 0 0 auto;">
+        <div style="display:flex; gap:24px; align-items:center; flex-wrap:wrap;">
+          <div class="control" style="min-width: 240px; flex: 1;">
+            <label style="display:flex; justify-content:space-between; align-items:center;">
+              <span>Incoming requests (N)</span>
+              <span class="pill" id="scale-n-val">24</span>
+            </label>
+            <input id="scale-n" type="range" min="1" max="48" step="1" value="24" />
+          </div>
+          <div class="control" style="min-width: 240px; flex: 1;">
+            <label style="display:flex; justify-content:space-between; align-items:center;">
+              <span>Avg actual length (% of max_seq_len)</span>
+              <span class="pill" id="scale-len-val">25%</span>
+            </label>
+            <input id="scale-len" type="range" min="6" max="100" step="6" value="25" />
+          </div>
+          <div style="display:flex; gap:14px; flex-wrap:wrap;">
+            <div style="text-align:center; padding: 6px 14px; background: rgba(255,107,107,.1); border:1px solid #ff6b6b; border-radius:4px; min-width:88px;">
+              <div style="font-family:var(--fontmono); font-size:10px; color:#ff6b6b; letter-spacing:.1em; text-transform:uppercase; font-weight:600;">Pre-paged served</div>
+              <div style="font-family:var(--fontmono); font-size:22px; color:#ff6b6b; font-weight:800;" id="prepaged-served">—</div>
+            </div>
+            <div style="text-align:center; padding: 6px 14px; background: rgba(94,234,212,.1); border:1px solid #5eead4; border-radius:4px; min-width:88px;">
+              <div style="font-family:var(--fontmono); font-size:10px; color:#5eead4; letter-spacing:.1em; text-transform:uppercase; font-weight:600;">Paged served</div>
+              <div style="font-family:var(--fontmono); font-size:22px; color:#5eead4; font-weight:800;" id="paged-served-x">—</div>
+            </div>
+            <div style="text-align:center; padding: 6px 14px; background: rgba(0,212,255,.12); border:1px solid var(--vast-cyan); border-radius:4px; min-width:88px;">
+              <div style="font-family:var(--fontmono); font-size:10px; color:var(--vast-cyan); letter-spacing:.1em; text-transform:uppercase; font-weight:600;">Throughput ×</div>
+              <div style="font-family:var(--fontmono); font-size:22px; color:var(--vast-cyan); font-weight:800;" id="scale-mult">—</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="panel bare" style="display:flex; flex-direction:column; gap:10px; flex:1; min-height:0;">
+        <svg id="scale-svg" viewBox="0 0 1300 360" preserveAspectRatio="xMidYMid meet" style="flex:1; min-height:0;"></svg>
+        <div class="callout" id="scale-callout" style="margin:0;"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SLIDE 7 — Together: who decides, who moves -->
+  <!-- ============================================================ -->
+  <section class="slide" data-slide="6">
+    <div class="slide-head">
+      <div class="accent-bar"></div>
+      <div class="slide-eyebrow">04 · The two layers</div>
       <h2 class="slide-title">Together: who decides, who moves</h2>
       <p class="slide-sub">LMCache and NIXL solve two halves of the same problem. LMCache decides <em>what</em> to reuse; NIXL gets it where it needs to go.</p>
     </div>
@@ -841,7 +1025,7 @@
       <div class="grid-2">
         <div class="panel bare" style="display:flex; flex-direction:column;">
           <h3 class="section-h">The stack</h3>
-          <svg id="arch-svg" viewBox="0 0 720 440" preserveAspectRatio="xMidYMid meet" style="flex:1; min-height:0; margin-top:8px;"></svg>
+          <svg id="arch-svg" viewBox="0 0 720 514" preserveAspectRatio="xMidYMid meet" style="flex:1; min-height:0; margin-top:8px;"></svg>
         </div>
         <div class="stack">
           <div class="panel">
@@ -871,12 +1055,12 @@
   </section>
 
   <!-- ============================================================ -->
-  <!-- SLIDE 5 — How a cache hit flows -->
+  <!-- SLIDE 8 — How a cache hit flows -->
   <!-- ============================================================ -->
-  <section class="slide" data-slide="4">
+  <section class="slide" data-slide="7">
     <div class="slide-head">
       <div class="accent-bar"></div>
-      <div class="slide-eyebrow">03 · The two layers (continued)</div>
+      <div class="slide-eyebrow">04 · The two layers (continued)</div>
       <h2 class="slide-title">A request that hits the cache, end to end</h2>
       <p class="slide-sub">Sequence diagram of one cache-hit request. Each layer does one job and hands off.</p>
     </div>
@@ -888,12 +1072,12 @@
   </section>
 
   <!-- ============================================================ -->
-  <!-- SLIDE 6 — LMCache: what & why -->
+  <!-- SLIDE 9 — LMCache: what & why -->
   <!-- ============================================================ -->
-  <section class="slide" data-slide="5">
+  <section class="slide" data-slide="8">
     <div class="slide-head">
       <div class="accent-bar"></div>
-      <div class="slide-eyebrow">04 · LMCache</div>
+      <div class="slide-eyebrow">05 · LMCache</div>
       <h2 class="slide-title">LMCache, in detail</h2>
       <p class="slide-sub">A cache layer at the inference engine that treats KV cache as a first-class, addressable, reusable artifact.</p>
     </div>
@@ -943,12 +1127,12 @@
   </section>
 
   <!-- ============================================================ -->
-  <!-- SLIDE 7 — LMCache examples -->
+  <!-- SLIDE 10 — LMCache examples -->
   <!-- ============================================================ -->
-  <section class="slide" data-slide="6">
+  <section class="slide" data-slide="9">
     <div class="slide-head">
       <div class="accent-bar"></div>
-      <div class="slide-eyebrow">04 · LMCache · use cases</div>
+      <div class="slide-eyebrow">05 · LMCache · use cases</div>
       <h2 class="slide-title">Where LMCache pays off — three concrete examples</h2>
       <p class="slide-sub">Click a tab. Cyan blocks are cache hits — the model skips them entirely.</p>
     </div>
@@ -976,12 +1160,12 @@
   </section>
 
   <!-- ============================================================ -->
-  <!-- SLIDE 8 — LMCache live demo -->
+  <!-- SLIDE 11 — LMCache live demo -->
   <!-- ============================================================ -->
-  <section class="slide" data-slide="7">
+  <section class="slide" data-slide="10">
     <div class="slide-head">
       <div class="accent-bar"></div>
-      <div class="slide-eyebrow">04 · LMCache · live demo</div>
+      <div class="slide-eyebrow">05 · LMCache · live demo</div>
       <h2 class="slide-title">Try it: prefix matching with hash-keyed blocks</h2>
       <p class="slide-sub">Edit the new request. Tokens that match a cached prefix block light up cyan — those are KV cache hits.</p>
     </div>
@@ -1027,12 +1211,12 @@
   </section>
 
   <!-- ============================================================ -->
-  <!-- SLIDE 9 — NIXL: the abstraction -->
+  <!-- SLIDE 12 — NIXL: the abstraction -->
   <!-- ============================================================ -->
-  <section class="slide" data-slide="8">
+  <section class="slide" data-slide="11">
     <div class="slide-head">
       <div class="accent-bar"></div>
-      <div class="slide-eyebrow">05 · NIXL</div>
+      <div class="slide-eyebrow">06 · NIXL</div>
       <h2 class="slide-title">NIXL — one buffer list, many backends</h2>
       <p class="slide-sub">A unified data-movement layer for KV cache. Below LMCache, above the messy reality of GPU memory, host RAM, NVMe, networks, and object stores.</p>
     </div>
@@ -1076,12 +1260,12 @@
   </section>
 
   <!-- ============================================================ -->
-  <!-- SLIDE 10 — NIXL: design wins (visual) -->
+  <!-- SLIDE 13 — NIXL: design wins (visual) -->
   <!-- ============================================================ -->
-  <section class="slide" data-slide="9">
+  <section class="slide" data-slide="12">
     <div class="slide-head">
       <div class="accent-bar"></div>
-      <div class="slide-eyebrow">05 · NIXL · why it's fast</div>
+      <div class="slide-eyebrow">06 · NIXL · why it's fast</div>
       <h2 class="slide-title">Two design wins: zero-copy and async</h2>
       <p class="slide-sub">Beyond unifying the API, NIXL also moves bytes faster than naive paths would — by skipping CPU staging and by never blocking the GPU.</p>
     </div>
@@ -1109,12 +1293,12 @@
   </section>
 
   <!-- ============================================================ -->
-  <!-- SLIDE 11 — Real-world benchmark + video -->
+  <!-- SLIDE 14 — Real-world benchmark + video -->
   <!-- ============================================================ -->
-  <section class="slide" data-slide="10">
+  <section class="slide" data-slide="13">
     <div class="slide-head">
       <div class="accent-bar"></div>
-      <div class="slide-eyebrow">05 · NIXL · measured benefit</div>
+      <div class="slide-eyebrow">06 · NIXL · measured benefit</div>
       <h2 class="slide-title">KV cache storage offload — real numbers</h2>
       <p class="slide-sub">Qwen3-235B-A22B-Instruct-2507-fp8 on 8× H100 GPUs, no prefill cache, retrieving KV from VAST Storage. As input length grows, the savings compound.</p>
     </div>
@@ -1168,29 +1352,87 @@
   </section>
 
   <!-- ============================================================ -->
-  <!-- SLIDE 12 — Bottom line -->
+  <!-- SLIDE 15 — Bottom line -->
   <!-- ============================================================ -->
-  <section class="slide" data-slide="11">
+  <section class="slide" data-slide="14">
     <div class="slide-head">
       <div class="accent-bar"></div>
-      <div class="slide-eyebrow">06 · Bottom line</div>
-      <h2 class="slide-title">KV cache becomes a tier of the storage hierarchy</h2>
+      <div class="slide-eyebrow">07 · Recap</div>
+      <h2 class="slide-title">The big picture — how everything fits together</h2>
+      <p class="slide-sub">A wasteful problem · a substrate that makes KV cache addressable · two layers that turn it into storage.</p>
     </div>
     <div class="slide-body">
-      <div class="grid-2">
-        <div class="panel">
-          <ul class="checklist" style="font-size:18px;">
-            <li><strong>Prefill is the expensive phase</strong> of long-context inference. The KV cache it produces is throwaway by default.</li>
-            <li><strong>LMCache</strong> turns KV cache into a reusable artifact, indexed by token-prefix hash.</li>
-            <li><strong>NIXL</strong> turns "where the cache lives" into a non-issue: one buffer-list descriptor across GPU / CPU / disk / network / object store.</li>
-            <li><strong>Together</strong>, they make KV cache a tier of the storage hierarchy — not a per-request scratch space.</li>
+      <svg id="recap-svg" viewBox="0 0 1300 130" preserveAspectRatio="xMidYMid meet" style="flex:0 0 auto; width:100%; height:auto;"></svg>
+
+      <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap: 14px; flex:1; min-height:0;">
+        <div class="panel" style="border-left-color:#ff6b6b; padding: 14px 18px; display:flex; flex-direction:column;">
+          <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom: 6px;">
+            <span style="font-family:var(--fontmono); font-size:11px; color:#ff6b6b; letter-spacing:.14em; font-weight:700;">01–02 · THE PROBLEM</span>
+          </div>
+          <div style="font-family:var(--fonth); font-size:20px; font-weight:800; margin-bottom:8px;">Long-context recompute</div>
+          <ul class="checklist">
+            <li>Prefill is <strong>O(N²)</strong> · long contexts dominate TTFT</li>
+            <li>Every shared prefix is recomputed per request</li>
+            <li>KV is born, used, then thrown away</li>
           </ul>
         </div>
-        <div class="panel" style="display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center;">
-          <div style="font-family:var(--fontmono); font-size:14px; color:var(--vast-cyan); letter-spacing:.2em; text-transform:uppercase; margin-bottom:20px; font-weight:600;">The shift</div>
-          <div style="font-family:var(--fonth); font-size:42px; line-height:1.25; max-width:30ch;">
-            KV cache stops being<br/><span style="color:var(--vast-bad)">scratch space</span><br/>
-            and starts being<br/><span style="color:var(--vast-cyan)">storage</span>.
+        <div class="panel" style="padding: 14px 18px; display:flex; flex-direction:column;">
+          <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom: 6px;">
+            <span style="font-family:var(--fontmono); font-size:11px; color:var(--vast-cyan); letter-spacing:.14em; font-weight:700;">03 · THE SUBSTRATE</span>
+          </div>
+          <div style="font-family:var(--fonth); font-size:20px; font-weight:800; margin-bottom:8px;">Paged attention</div>
+          <ul class="checklist">
+            <li>Used by vLLM · TensorRT-LLM · SGLang</li>
+            <li>KV in <strong>fixed-size blocks</strong> (~16 tokens)</li>
+            <li>Each block: hashable, movable, shareable</li>
+          </ul>
+        </div>
+        <div class="panel" style="padding: 14px 18px; display:flex; flex-direction:column;">
+          <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom: 6px;">
+            <span style="font-family:var(--fontmono); font-size:11px; color:var(--vast-cyan); letter-spacing:.14em; font-weight:700;">04–05 · THE BRAIN</span>
+          </div>
+          <div style="font-family:var(--fonth); font-size:20px; font-weight:800; margin-bottom:8px;">LMCache</div>
+          <ul class="checklist">
+            <li>Indexes blocks by <strong>prefix hash</strong></li>
+            <li>Tiers: <span class="mono">HBM → RAM → NVMe → remote</span></li>
+            <li>Owns lookup, eviction, sharing, tenant keys</li>
+          </ul>
+        </div>
+        <div class="panel" style="padding: 14px 18px; display:flex; flex-direction:column;">
+          <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom: 6px;">
+            <span style="font-family:var(--fontmono); font-size:11px; color:var(--vast-cyan); letter-spacing:.14em; font-weight:700;">06 · THE MUSCLE</span>
+          </div>
+          <div style="font-family:var(--fonth); font-size:20px; font-weight:800; margin-bottom:8px;">NIXL</div>
+          <ul class="checklist">
+            <li>One <strong>buffer-list</strong> API · many backends</li>
+            <li>Zero-copy where the wire supports it (RDMA)</li>
+            <li>Async — never blocks the GPU</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="panel" style="border-left-color: var(--vast-good); padding: 16px 24px; flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:24px; flex-wrap:wrap;">
+        <div>
+          <div style="font-family:var(--fontmono); font-size:11px; color:var(--vast-good); letter-spacing:.18em; text-transform:uppercase; font-weight:700; margin-bottom:6px;">The shift</div>
+          <div style="font-family:var(--fonth); font-size:26px; font-weight:800; line-height:1.2;">
+            KV cache stops being <span style="color:var(--vast-bad)">scratch space</span> and starts being <span style="color:var(--vast-cyan)">storage</span>.
+          </div>
+        </div>
+        <div style="display:flex; gap:14px;">
+          <div style="text-align:center; padding: 8px 16px; border:1px solid var(--vast-line); border-radius:6px; background: var(--vast-deep-blue); min-width: 130px;">
+            <div style="font-family:var(--fontmono); font-size:10px; color:var(--vast-silver); text-transform:uppercase; letter-spacing:.1em; font-weight:600;">More concurrent</div>
+            <div style="font-family:var(--fontmono); font-size:24px; color:var(--vast-cyan); font-weight:800;">~3×</div>
+            <div style="font-family:var(--fontmono); font-size:10px; color:var(--vast-silver);">paged vs slabs</div>
+          </div>
+          <div style="text-align:center; padding: 8px 16px; border:1px solid var(--vast-line); border-radius:6px; background: var(--vast-deep-blue); min-width: 130px;">
+            <div style="font-family:var(--fontmono); font-size:10px; color:var(--vast-silver); text-transform:uppercase; letter-spacing:.1em; font-weight:600;">Faster TTFT</div>
+            <div style="font-family:var(--fontmono); font-size:24px; color:var(--vast-cyan); font-weight:800;">5–10×</div>
+            <div style="font-family:var(--fontmono); font-size:10px; color:var(--vast-silver);">on cached prefixes</div>
+          </div>
+          <div style="text-align:center; padding: 8px 16px; border:1px solid var(--vast-line); border-radius:6px; background: var(--vast-deep-blue); min-width: 130px;">
+            <div style="font-family:var(--fontmono); font-size:10px; color:var(--vast-silver); text-transform:uppercase; letter-spacing:.1em; font-weight:600;">Survives</div>
+            <div style="font-family:var(--fontmono); font-size:24px; color:var(--vast-cyan); font-weight:800;">across hosts</div>
+            <div style="font-family:var(--fontmono); font-size:10px; color:var(--vast-silver);">via NIXL transfer</div>
           </div>
         </div>
       </div>
@@ -1323,15 +1565,18 @@ const SLIDE_TITLES = [
   { num:'',    title:'Title',                              desc:'LMCache + NIXL intro' },
   { num:'01',  title:'Prefill vs. Decode',                 desc:'What each phase actually does' },
   { num:'02',  title:'The waste',                          desc:'KV cache born → used → tossed' },
-  { num:'03',  title:'Together',                           desc:'Who decides, who moves' },
-  { num:'03',  title:'Cache-hit flow',                     desc:'Sequence diagram' },
-  { num:'04',  title:'LMCache, in detail',                 desc:'What it is, what it does' },
-  { num:'04',  title:'LMCache examples',                   desc:'RAG, system prompt, multi-turn' },
-  { num:'04',  title:'LMCache live demo',                  desc:'Prefix matching' },
-  { num:'05',  title:'NIXL — buffer list',                 desc:'One abstraction, many backends' },
-  { num:'05',  title:'NIXL — design wins',                 desc:'Zero-copy and async' },
-  { num:'05',  title:'Storage offload benchmark',          desc:'Real numbers + original talk' },
-  { num:'06',  title:'Bottom line',                        desc:'Takeaways' },
+  { num:'03',  title:'Slab to pages',                      desc:'How paged attention transforms one slab' },
+  { num:'03',  title:'Paged attention',                    desc:'KV memory as pages, not slabs' },
+  { num:'03',  title:'Paged attention at scale',           desc:'Memory utilization & throughput' },
+  { num:'04',  title:'Together',                           desc:'Who decides, who moves' },
+  { num:'04',  title:'Cache-hit flow',                     desc:'Sequence diagram' },
+  { num:'05',  title:'LMCache, in detail',                 desc:'What it is, what it does' },
+  { num:'05',  title:'LMCache examples',                   desc:'RAG, system prompt, multi-turn' },
+  { num:'05',  title:'LMCache live demo',                  desc:'Prefix matching' },
+  { num:'06',  title:'NIXL — buffer list',                 desc:'One abstraction, many backends' },
+  { num:'06',  title:'NIXL — design wins',                 desc:'Zero-copy and async' },
+  { num:'06',  title:'Storage offload benchmark',          desc:'Real numbers + original talk' },
+  { num:'07',  title:'Bottom line',                        desc:'Takeaways' },
 ];
 const TOTAL = SLIDE_TITLES.length;
 let cur = 0;
@@ -1587,7 +1832,385 @@ WASTE.anim = +$('#waste-n').value;
 drawWaste();
 
 /* ==============================================================
-   03 — Architecture & sequence
+   03 — Slab to pages: the conversion (animation)
+   ============================================================== */
+const CONV = { progress: 1, timer: null };  // 0 = pure slab · 1 = fully paged
+const CONV_BLOCK_COLORS = ['#00d4ff', '#5eead4', '#a3e635', '#fbbf24'];
+const CONV_HASHES = ['#a3f5e2', '#b210dd', '#99cd47', '#4b85f1'];
+
+function drawConv() {
+  const svg = $('#conv-svg');
+  const W = 1300, H = 320;
+  const t = CONV.progress;             // 0..1 animation parameter
+  const ease = t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t + 2, 2) / 2;
+  let s = '';
+
+  // ---- LEFT: BEFORE (slab) ----
+  const beforeX = 50, beforeW = 460, beforeH = 78, beforeY = 132;
+
+  s += `<text x="${beforeX + beforeW/2}" y="58" text-anchor="middle" font-size="14" fill="#ff6b6b" font-family="ui-monospace,monospace" font-weight="700">BEFORE · monolithic slab</text>`;
+  s += `<text x="${beforeX + beforeW/2}" y="78" text-anchor="middle" font-size="11" fill="#7a8da3" font-family="ui-monospace,monospace">1 request · 16 tokens · 1 atomic allocation</text>`;
+
+  s += `<rect x="${beforeX}" y="${beforeY}" width="${beforeW}" height="${beforeH}" rx="6" fill="rgba(255,107,107,.18)" stroke="#ff6b6b" stroke-width="1.5"/>`;
+  // Internal token ticks (faint)
+  for (let i = 1; i < 16; i++) {
+    const x = beforeX + (i / 16) * beforeW;
+    s += `<line x1="${x}" y1="${beforeY+3}" x2="${x}" y2="${beforeY+beforeH-3}" stroke="rgba(255,255,255,0.08)" stroke-width="0.5"/>`;
+  }
+  s += `<text x="${beforeX + beforeW/2}" y="${beforeY + beforeH/2 + 5}" text-anchor="middle" font-size="14" fill="#fff" font-family="ui-monospace,monospace" font-weight="700">tokens 0..15</text>`;
+  s += `<text x="${beforeX + beforeW/2}" y="${beforeY + beforeH + 28}" text-anchor="middle" font-size="11" fill="#ff6b6b" font-family="ui-monospace,monospace">cannot be split · cannot be hashed · cannot be shared</text>`;
+
+  // ---- MIDDLE: arrow + label ----
+  const arrFromX = beforeX + beforeW + 26;     // 536
+  const arrToX   = arrFromX + 130;             // 666
+  const arrY     = beforeY + beforeH/2;
+  s += `<line x1="${arrFromX}" y1="${arrY}" x2="${arrToX-10}" y2="${arrY}" stroke="#00d4ff" stroke-width="2.5"/>`;
+  s += `<polygon points="${arrToX},${arrY} ${arrToX-12},${arrY-8} ${arrToX-12},${arrY+8}" fill="#00d4ff"/>`;
+  s += `<text x="${(arrFromX+arrToX)/2}" y="${arrY-14}" text-anchor="middle" font-size="13" fill="#00d4ff" font-family="ui-monospace,monospace" font-weight="700">paged attention</text>`;
+  s += `<text x="${(arrFromX+arrToX)/2}" y="${arrY+24}" text-anchor="middle" font-size="11" fill="#7a8da3" font-family="ui-monospace,monospace">block_size = 4</text>`;
+
+  // ---- RIGHT: AFTER ----
+  // Animated state: at t=0 the right side mirrors the slab (one big bar);
+  // at t=1 it has fully separated into 4 distinct blocks with hashes.
+  const afterStartX = arrToX + 26;             // 692
+  const afterEndX   = W - 50;                  // 1250
+  const afterTotalW = afterEndX - afterStartX; // ~558
+  const finalGap = 16;
+  const finalBlockW = (afterTotalW - 3 * finalGap) / 4;     // ~127.5
+  // Interpolate gap from 0 to finalGap
+  const gap = finalGap * ease;
+  const blockW = (afterTotalW - 3 * gap) / 4;
+  const blockH = beforeH;
+  const blockY = beforeY;
+
+  // Header text on the right (fades in with progress)
+  s += `<text x="${afterStartX + afterTotalW/2}" y="58" text-anchor="middle" font-size="14" fill="#5eead4" font-family="ui-monospace,monospace" font-weight="700" opacity="${0.3 + 0.7*ease}">AFTER · paged into 4 blocks</text>`;
+  s += `<text x="${afterStartX + afterTotalW/2}" y="78" text-anchor="middle" font-size="11" fill="#7a8da3" font-family="ui-monospace,monospace" opacity="${0.3 + 0.7*ease}">same KV data · 4 atomic units · independently addressable</text>`;
+
+  for (let i = 0; i < 4; i++) {
+    const bx = afterStartX + i * (blockW + gap);
+    const c = CONV_BLOCK_COLORS[i];
+    s += `<rect x="${bx}" y="${blockY}" width="${blockW}" height="${blockH}" rx="${2 + 4*ease}" fill="${c}" opacity="${0.35 + 0.25*ease}" stroke="${c}" stroke-width="${0.5 + ease}"/>`;
+    s += `<text x="${bx + blockW/2}" y="${blockY + blockH/2 - 4}" text-anchor="middle" font-size="14" fill="#fff" font-family="ui-monospace,monospace" font-weight="700" opacity="${ease}">B${i}</text>`;
+    s += `<text x="${bx + blockW/2}" y="${blockY + blockH/2 + 13}" text-anchor="middle" font-size="10" fill="rgba(255,255,255,0.85)" font-family="ui-monospace,monospace" opacity="${ease}">tok ${i*4}-${i*4+3}</text>`;
+
+    // Hash label appears in the second half of the animation
+    const hashOpacity = Math.max(0, (ease - 0.5) * 2);
+    s += `<text x="${bx + blockW/2}" y="${blockY + blockH + 24}" text-anchor="middle" font-size="11" fill="${c}" font-family="ui-monospace,monospace" font-weight="600" opacity="${hashOpacity}">${CONV_HASHES[i]}</text>`;
+    s += `<text x="${bx + blockW/2}" y="${blockY + blockH + 39}" text-anchor="middle" font-size="9" fill="#7a8da3" font-family="ui-monospace,monospace" opacity="${hashOpacity}">block hash</text>`;
+  }
+
+  // Connector dotted lines from each slab quarter to the corresponding block (fade in)
+  const conOpacity = Math.max(0, (ease - 0.2) * 0.8);
+  for (let i = 0; i < 4; i++) {
+    const fromX = beforeX + ((i + 0.5) / 4) * beforeW;
+    const fromY = beforeY + beforeH;
+    const toX = afterStartX + i * (blockW + gap) + blockW/2;
+    const toY = blockY + blockH;
+    const c = CONV_BLOCK_COLORS[i];
+    const dipY = beforeY + beforeH + 56;
+    s += `<path d="M ${fromX} ${fromY} C ${fromX} ${dipY}, ${toX} ${dipY}, ${toX} ${toY}"
+            stroke="${c}" stroke-width="1" fill="none" stroke-dasharray="3,3" opacity="${conOpacity * 0.55}"/>`;
+  }
+
+  svg.innerHTML = s;
+}
+function playConv() {
+  if (CONV.timer) cancelAnimationFrame(CONV.timer);
+  const start = performance.now();
+  const duration = 1600;
+  CONV.progress = 0;
+  function frame(now) {
+    const elapsed = (now - start) / duration;
+    CONV.progress = Math.min(1, elapsed);
+    drawConv();
+    if (CONV.progress < 1) CONV.timer = requestAnimationFrame(frame);
+    else CONV.timer = null;
+  }
+  CONV.timer = requestAnimationFrame(frame);
+}
+$('#conv-play').addEventListener('click', playConv);
+drawConv();
+playConv();
+
+/* ==============================================================
+   04 — Paged attention: contiguous vs paged
+   ============================================================== */
+const PAGED = { mode: 'paged' };
+function drawPaged() {
+  const svg = $('#paged-svg');
+  const W = 1300;
+  const mode = PAGED.mode;
+  let s = '';
+
+  if (mode === 'contiguous') {
+    const cellW = 24, cellH = 30, gap = 2;
+    const labelX = 130, slotsX = 160;
+    const numUsed = 16;       // 12 prefix + 4 tail
+    const numReserved = 32;   // max_seq_len
+    const tailColors = [
+      ['rgba(255,181,71,.55)',  '#ffb547'],
+      ['rgba(94,234,212,.55)',  '#5eead4'],
+      ['rgba(192,132,252,.55)', '#c084fc'],
+    ];
+    const rowYs = [150, 230, 310];
+
+    s += `<text x="${W/2}" y="32" text-anchor="middle" font-size="20" fill="#fff" font-family="Aptos Display, Arial Black, Arial, sans-serif" font-weight="800">Each request reserves a max-length contiguous slab</text>`;
+    s += `<text x="${W/2}" y="56" text-anchor="middle" font-size="13" fill="#b8c5d4" font-family="ui-monospace,monospace">Slots reserved per request = max_seq_len, regardless of actual prompt length. Same prefix, copied three times.</text>`;
+
+    rowYs.forEach((y, ri) => {
+      s += `<text x="${labelX-12}" y="${y+cellH/2-4}" text-anchor="end" font-size="14" fill="#b8c5d4" font-family="ui-monospace,monospace" font-weight="700">Req ${'ABC'[ri]}</text>`;
+      s += `<text x="${labelX-12}" y="${y+cellH/2+13}" text-anchor="end" font-size="11" fill="#7a8da3" font-family="ui-monospace,monospace">slab[0..31]</text>`;
+
+      for (let i = 0; i < numReserved; i++) {
+        const x = slotsX + i * (cellW + gap);
+        if (i < 12) {
+          s += `<rect x="${x}" y="${y}" width="${cellW}" height="${cellH}" rx="3"
+                  fill="rgba(0,212,255,.55)" stroke="#00d4ff"/>`;
+        } else if (i < 16) {
+          s += `<rect x="${x}" y="${y}" width="${cellW}" height="${cellH}" rx="3"
+                  fill="${tailColors[ri][0]}" stroke="${tailColors[ri][1]}"/>`;
+        } else {
+          s += `<rect x="${x}" y="${y}" width="${cellW}" height="${cellH}" rx="3"
+                  fill="none" stroke="#234670" stroke-dasharray="3,2"/>`;
+        }
+      }
+    });
+
+    const wastedX = slotsX + 16 * (cellW + gap) - 1;
+    const wastedW = (numReserved - 16) * (cellW + gap);
+    const annY = rowYs[0] - 14;
+    s += `<path d="M ${wastedX} ${annY} L ${wastedX} ${annY-16} L ${wastedX+wastedW} ${annY-16} L ${wastedX+wastedW} ${annY}" fill="none" stroke="#ff6b6b" stroke-width="2"/>`;
+    s += `<text x="${wastedX+wastedW/2}" y="${annY-24}" text-anchor="middle" font-size="14" fill="#ff6b6b" font-family="ui-monospace,monospace" font-weight="700">RESERVED, EMPTY · 16 slots × 3 reqs</text>`;
+
+    const lastY = rowYs[2] + cellH + 30;
+    s += `<rect x="${slotsX}" y="${lastY}" width="14" height="14" fill="rgba(0,212,255,.55)" stroke="#00d4ff"/>`;
+    s += `<text x="${slotsX+22}" y="${lastY+11}" font-size="12" fill="#b8c5d4" font-family="ui-monospace,monospace">shared system prompt (duplicated)</text>`;
+    s += `<rect x="${slotsX+280}" y="${lastY}" width="14" height="14" fill="rgba(94,234,212,.55)" stroke="#5eead4"/>`;
+    s += `<text x="${slotsX+302}" y="${lastY+11}" font-size="12" fill="#b8c5d4" font-family="ui-monospace,monospace">unique tail</text>`;
+    s += `<rect x="${slotsX+440}" y="${lastY}" width="14" height="14" fill="none" stroke="#234670" stroke-dasharray="3,2"/>`;
+    s += `<text x="${slotsX+462}" y="${lastY+11}" font-size="12" fill="#b8c5d4" font-family="ui-monospace,monospace">reserved slot, never written</text>`;
+
+  } else {
+    // PAGED MODE
+    const blockW = 110, blockH = 50, blockGap = 16;
+    const poolY = 80;
+    const totalPoolW = 6 * blockW + 5 * blockGap;
+    const poolStartX = (W - totalPoolW) / 2 + 40;
+
+    const blockColors = [
+      ['rgba(0,212,255,.55)',  '#00d4ff'],
+      ['rgba(0,212,255,.55)',  '#00d4ff'],
+      ['rgba(0,212,255,.55)',  '#00d4ff'],
+      ['rgba(255,181,71,.55)', '#ffb547'],
+      ['rgba(94,234,212,.55)', '#5eead4'],
+      ['rgba(192,132,252,.55)', '#c084fc'],
+    ];
+    const blockLabels = ['P0','P1','P2','P3','P4','P5'];
+    const blockSubs = ['sys 0-3','sys 4-7','sys 8-11','reqA 12-15','reqB 12-15','reqC 12-15'];
+
+    s += `<text x="${W/2}" y="32" text-anchor="middle" font-size="20" fill="#fff" font-family="Aptos Display, Arial Black, Arial, sans-serif" font-weight="800">Physical KV blocks (pool)</text>`;
+    s += `<text x="${W/2}" y="56" text-anchor="middle" font-size="13" fill="#b8c5d4" font-family="ui-monospace,monospace">Fixed-size, allocated on demand. P0–P2 are referenced by all three requests.</text>`;
+
+    const poolXs = [];
+    for (let i = 0; i < 6; i++) {
+      const x = poolStartX + i * (blockW + blockGap);
+      poolXs.push(x);
+      s += `<rect x="${x}" y="${poolY}" width="${blockW}" height="${blockH}" rx="6"
+              fill="${blockColors[i][0]}" stroke="${blockColors[i][1]}" stroke-width="1.5"/>`;
+      s += `<text x="${x+blockW/2}" y="${poolY+22}" text-anchor="middle" font-size="14" fill="#fff" font-family="ui-monospace,monospace" font-weight="700">${blockLabels[i]}</text>`;
+      s += `<text x="${x+blockW/2}" y="${poolY+39}" text-anchor="middle" font-size="10" fill="#0a1628" font-family="ui-monospace,monospace" font-weight="600">${blockSubs[i]}</text>`;
+    }
+
+    const tableY = 230;
+    const tableH = 50;
+    const cellGap = blockGap;
+    const cellW = blockW;
+    const reqs = ['Req A','Req B','Req C'];
+    const reqMaps = [
+      [0,1,2,3],
+      [0,1,2,4],
+      [0,1,2,5],
+    ];
+    const rowYs = [tableY, tableY+72, tableY+144];
+    const tableStartX = poolStartX;
+    const labelEndX = poolStartX - 16;
+
+    s += `<text x="${W/2}" y="${tableY-22}" text-anchor="middle" font-size="16" fill="#fff" font-family="Aptos Display, Arial Black, Arial, sans-serif" font-weight="800">Block tables — each request maps logical positions → physical blocks</text>`;
+
+    rowYs.forEach((rY, ri) => {
+      s += `<text x="${labelEndX}" y="${rY+tableH/2-3}" text-anchor="end" font-size="14" fill="#b8c5d4" font-family="ui-monospace,monospace" font-weight="700">${reqs[ri]}</text>`;
+      s += `<text x="${labelEndX}" y="${rY+tableH/2+14}" text-anchor="end" font-size="11" fill="#7a8da3" font-family="ui-monospace,monospace">block table</text>`;
+
+      reqMaps[ri].forEach((pidx, ci) => {
+        const x = tableStartX + ci * (cellW + cellGap);
+        s += `<rect x="${x}" y="${rY}" width="${cellW}" height="${tableH}" rx="6"
+                fill="${blockColors[pidx][0]}" stroke="${blockColors[pidx][1]}" stroke-width="1.5"/>`;
+        s += `<text x="${x+cellW/2}" y="${rY+22}" text-anchor="middle" font-size="13" fill="#fff" font-family="ui-monospace,monospace" font-weight="700">→ ${blockLabels[pidx]}</text>`;
+        s += `<text x="${x+cellW/2}" y="${rY+39}" text-anchor="middle" font-size="10" fill="#0a1628" font-family="ui-monospace,monospace" font-weight="600">tok ${ci*4}-${ci*4+3}</text>`;
+
+        const fromX = x + cellW/2;
+        const fromY = rY;
+        const toX = poolXs[pidx] + blockW/2;
+        const toY = poolY + blockH;
+        const midY = (fromY + toY) / 2;
+        s += `<path d="M ${fromX} ${fromY} C ${fromX} ${midY}, ${toX} ${midY}, ${toX} ${toY+1}"
+                stroke="${blockColors[pidx][1]}" stroke-width="1" fill="none" stroke-dasharray="3,3" opacity="0.45"/>`;
+      });
+    });
+  }
+
+  svg.innerHTML = s;
+
+  if (mode === 'contiguous') {
+    $('#paged-stat-used').textContent     = '48 / 96';
+    $('#paged-stat-reserved').textContent = '48';
+    $('#paged-stat-shared').textContent   = '0';
+    const co = $('#paged-callout');
+    co.className = 'callout bad';
+    co.innerHTML = `Each request reserves <strong>32 slots</strong> (max_seq_len), uses <strong>16</strong>, and the rest sits empty. Across three requests: <strong>48 slots wasted</strong>, and the shared system prompt is duplicated three times — no way to point at it once.`;
+  } else {
+    $('#paged-stat-used').textContent     = '24 / 24';
+    $('#paged-stat-reserved').textContent = '0';
+    $('#paged-stat-shared').textContent   = '12';
+    const co = $('#paged-callout');
+    co.className = 'callout';
+    co.innerHTML = `Three requests, 48 logical tokens — but only <strong>24 slots of physical KV memory</strong>, because three blocks (12 tokens of system prompt) are <em>shared by reference</em>. Zero reserved-but-empty slots. The block is now a stable, addressable unit — exactly what LMCache hashes and NIXL transfers.`;
+  }
+}
+$$('#paged-mode button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('#paged-mode button').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    PAGED.mode = btn.dataset.mode;
+    drawPaged();
+  });
+});
+drawPaged();
+
+/* ==============================================================
+   05 — Paged attention at scale: memory utilization
+   ============================================================== */
+const SCALE_COLORS = ['#00d4ff','#5eead4','#ffb547','#c084fc','#ff6b9d','#a3e635','#fbbf24','#60a5fa','#f87171','#34d399','#e879f9','#fb923c','#22d3ee','#facc15','#a78bfa','#84cc16','#fb7185','#06b6d4','#f472b6','#65a30d'];
+function drawScale() {
+  const N = +$('#scale-n').value;
+  const lenPct = +$('#scale-len').value;
+  $('#scale-n-val').textContent = N;
+  $('#scale-len-val').textContent = lenPct + '%';
+
+  const COLS = 16, ROWS = 16, TOTAL = COLS * ROWS;          // 256 cells = 16 max-length-worth
+  const actLen = Math.max(1, Math.round(lenPct * COLS / 100));
+
+  const prepagedServed = Math.min(N, ROWS);
+  const pagedServed    = Math.min(N, Math.floor(TOTAL / actLen));
+  const prepagedUtil   = (prepagedServed * actLen / TOTAL) * 100;
+  const pagedUtil      = (pagedServed * actLen / TOTAL) * 100;
+  const mult = prepagedServed > 0 ? (pagedServed / prepagedServed) : 0;
+
+  const svg = $('#scale-svg');
+  const W = 1300, H = 360, padTop = 56, padBot = 36;
+  const gapX = 60;
+  const labelW = 38;
+  const padR = 16;  // right-side inset inside the pool box
+  const poolW = (W - gapX) / 2;
+  const cellGap = 2;
+  const cellW = (poolW - labelW - padR - cellGap*(COLS-1)) / COLS;
+  const cellH = (H - padTop - padBot - cellGap*(ROWS-1)) / ROWS;
+  const rowFullW = COLS * cellW + (COLS - 1) * cellGap;
+
+  let s = '';
+
+  // ---- LEFT: Pre-paged ----
+  const leftX0 = 0;
+  s += `<rect x="${leftX0}" y="0" width="${poolW}" height="${H}" rx="8" fill="rgba(255,107,107,.04)" stroke="#ff6b6b" stroke-width="1" stroke-dasharray="4,3" opacity="0.7"/>`;
+  s += `<text x="${leftX0+12}" y="20" font-size="13" fill="#ff6b6b" font-family="ui-monospace,monospace" font-weight="700">PRE-PAGED · one slab per request</text>`;
+  s += `<text x="${leftX0+poolW-12}" y="20" text-anchor="end" font-size="12" fill="#b8c5d4" font-family="ui-monospace,monospace">util ${prepagedUtil.toFixed(0)}%</text>`;
+  // Reference unit: a long bar = 1 slab (atomic)
+  s += `<rect x="${leftX0+12}" y="32" width="80" height="11" rx="2" fill="rgba(255,107,107,.18)" stroke="#ff6b6b" stroke-width="1"/>`;
+  s += `<text x="${leftX0+98}" y="41" font-size="11" fill="rgba(255,107,107,.9)" font-family="ui-monospace,monospace" font-weight="600">= 1 slab — entire ${COLS}-slot row allocated as one atomic unit</text>`;
+
+  for (let r = 0; r < ROWS; r++) {
+    const rowY = padTop + r * (cellH + cellGap);
+    s += `<text x="${leftX0+labelW-6}" y="${rowY+cellH/2+3}" text-anchor="end" font-size="9" fill="#7a8da3" font-family="ui-monospace,monospace">${r+1}</text>`;
+    const slabX = leftX0 + labelW;
+    if (r < prepagedServed) {
+      const reqColor = SCALE_COLORS[r % SCALE_COLORS.length];
+      const usedW = (actLen / COLS) * rowFullW;
+      // Used portion — single solid bar, no internal cell divisions
+      s += `<rect x="${slabX}" y="${rowY}" width="${usedW}" height="${cellH}" rx="2" fill="${reqColor}" opacity="0.85"/>`;
+      // Reserved-empty portion — single dashed block (one big "wasted" region)
+      if (actLen < COLS) {
+        const reservedX = slabX + usedW;
+        const reservedW = rowFullW - usedW;
+        s += `<rect x="${reservedX}" y="${rowY}" width="${reservedW}" height="${cellH}" rx="2" fill="rgba(255,107,107,.1)" stroke="#ff6b6b" stroke-width="0.8" stroke-dasharray="4,2.5" opacity="0.8"/>`;
+      }
+      // Slab outline — emphasizes the atomic unit
+      s += `<rect x="${slabX}" y="${rowY}" width="${rowFullW}" height="${cellH}" rx="2" fill="none" stroke="${reqColor}" stroke-width="1.5" opacity="0.85"/>`;
+    } else {
+      // Empty slot — single rect, not 16 cells (matches "one slab" framing)
+      s += `<rect x="${slabX}" y="${rowY}" width="${rowFullW}" height="${cellH}" rx="2" fill="#0e1b30" stroke="#234670" stroke-width="0.6"/>`;
+    }
+  }
+  const leftFooter = N > prepagedServed
+    ? `${N - prepagedServed} requests REJECTED · no free slot`
+    : `${prepagedServed} of ${N} fit · ${(100-prepagedUtil).toFixed(0)}% of memory wasted as reserved-empty`;
+  s += `<text x="${leftX0+poolW/2}" y="${H-18}" text-anchor="middle" font-size="12" fill="${N>prepagedServed?'#ff6b6b':'#b8c5d4'}" font-family="ui-monospace,monospace" font-weight="${N>prepagedServed?'700':'600'}">${leftFooter}</text>`;
+
+  // ---- RIGHT: Paged ----
+  const rightX0 = poolW + gapX;
+  s += `<rect x="${rightX0}" y="0" width="${poolW}" height="${H}" rx="8" fill="rgba(94,234,212,.05)" stroke="#5eead4" stroke-width="1" stroke-dasharray="4,3" opacity="0.7"/>`;
+  s += `<text x="${rightX0+12}" y="20" font-size="13" fill="#5eead4" font-family="ui-monospace,monospace" font-weight="700">PAGED · individual blocks, packed</text>`;
+  s += `<text x="${rightX0+poolW-12}" y="20" text-anchor="end" font-size="12" fill="#b8c5d4" font-family="ui-monospace,monospace">util ${pagedUtil.toFixed(0)}%</text>`;
+  // Reference unit: one block — illustrate the atomic allocation unit (single cell)
+  s += `<rect x="${rightX0+12}" y="32" width="12" height="12" rx="1.5" fill="rgba(94,234,212,.3)" stroke="#5eead4" stroke-width="1.2"/>`;
+  s += `<text x="${rightX0+30}" y="42" font-size="11" fill="rgba(94,234,212,.95)" font-family="ui-monospace,monospace" font-weight="600">= 1 block (one allocation; many small blocks per request)</text>`;
+
+  const pagedMap = new Array(TOTAL).fill(-1);
+  let cur = 0;
+  for (let i = 0; i < pagedServed; i++) for (let k = 0; k < actLen; k++) pagedMap[cur++] = i;
+
+  for (let r = 0; r < ROWS; r++) {
+    const rowY = padTop + r * (cellH + cellGap);
+    s += `<text x="${rightX0+labelW-6}" y="${rowY+cellH/2+3}" text-anchor="end" font-size="9" fill="#7a8da3" font-family="ui-monospace,monospace">${r+1}</text>`;
+    for (let c = 0; c < COLS; c++) {
+      const cx = rightX0 + labelW + c * (cellW + cellGap);
+      const owner = pagedMap[r * COLS + c];
+      if (owner >= 0) {
+        const blockColor = SCALE_COLORS[owner % SCALE_COLORS.length];
+        s += `<rect x="${cx}" y="${rowY}" width="${cellW}" height="${cellH}" rx="1.5" fill="${blockColor}" stroke="${blockColor}" stroke-width="0.8" opacity="0.9"/>`;
+      } else {
+        s += `<rect x="${cx}" y="${rowY}" width="${cellW}" height="${cellH}" rx="1.5" fill="#0e1b30" stroke="#234670" stroke-width="0.4"/>`;
+      }
+    }
+  }
+  const rightFooter = N > pagedServed
+    ? `${N - pagedServed} rejected · pool full`
+    : `${pagedServed} of ${N} fit · ${(100-pagedUtil).toFixed(0)}% memory still free for more requests or longer contexts`;
+  s += `<text x="${rightX0+poolW/2}" y="${H-18}" text-anchor="middle" font-size="12" fill="${N>pagedServed?'#ff6b6b':'#5eead4'}" font-family="ui-monospace,monospace" font-weight="${N>pagedServed?'700':'600'}">${rightFooter}</text>`;
+
+  svg.innerHTML = s;
+
+  $('#prepaged-served').textContent  = `${prepagedServed} / ${N}`;
+  $('#paged-served-x').textContent   = `${pagedServed} / ${N}`;
+  $('#scale-mult').textContent       = mult >= 1 ? `${mult.toFixed(mult >= 10 ? 0 : 1)}×` : '—';
+
+  const co = $('#scale-callout');
+  if (pagedServed > prepagedServed) {
+    co.className = 'callout';
+    co.innerHTML = `Same GPU memory, same workload — paged attention serves <strong>${mult.toFixed(mult >= 10 ? 0 : 1)}× more concurrent requests</strong> because pre-paged reserves the worst case for every one. The lower the average prompt length relative to <code class="mono">max_seq_len</code>, the more dramatic the gap.`;
+  } else if (pagedServed === prepagedServed && prepagedServed === N) {
+    co.className = 'callout';
+    co.innerHTML = `Both schemes serve all ${N} requests at this load — but paged uses <strong>${pagedUtil.toFixed(0)}%</strong> of memory while pre-paged occupies <strong>${(prepagedServed*COLS/TOTAL*100).toFixed(0)}%</strong> (mostly reserved-empty). That headroom buys throughput, longer contexts, or both.`;
+  } else {
+    co.className = 'callout warn';
+    co.innerHTML = `At this average length the slabs fill efficiently — push the avg-length slider down (real workloads are 5–25%) to see paged pull ahead.`;
+  }
+}
+['scale-n','scale-len'].forEach(id => $('#'+id).addEventListener('input', drawScale));
+drawScale();
+
+/* ==============================================================
+   06 — Architecture & sequence
    ============================================================== */
 function drawArch() {
   const svg = $('#arch-svg');
@@ -1598,70 +2221,83 @@ function drawArch() {
       </marker>
     </defs>
     <g>
-      <rect x="180" y="14" width="360" height="60" rx="6" fill="#142540" stroke="#234670" stroke-width="1.5"/>
-      <text x="360" y="40" text-anchor="middle" font-size="16" fill="#fff" font-family="ui-monospace,monospace" font-weight="700">Inference Engine</text>
-      <text x="360" y="60" text-anchor="middle" font-size="13" fill="#b8c5d4" font-family="ui-monospace,monospace">vLLM, TensorRT-LLM, etc.</text>
+      <rect x="120" y="14" width="480" height="84" rx="6" fill="#142540" stroke="#234670" stroke-width="2"/>
+      <text x="360" y="44" text-anchor="middle" font-size="20" fill="#fff" font-family="ui-monospace,monospace" font-weight="800">Inference Engine</text>
+      <text x="360" y="66" text-anchor="middle" font-size="13" fill="#b8c5d4" font-family="ui-monospace,monospace">vLLM · TensorRT-LLM · SGLang · …</text>
+      <text x="360" y="86" text-anchor="middle" font-size="12" fill="#7a8da3" font-family="ui-monospace,monospace">all use <tspan fill="#00d4ff" font-weight="700">paged attention</tspan> — KV in fixed-size blocks</text>
     </g>
     <g>
-      <rect x="120" y="106" width="480" height="84" rx="6" fill="#1c3358" stroke="#00d4ff" stroke-width="2.5"/>
-      <text x="360" y="138" text-anchor="middle" font-size="20" fill="#00d4ff" font-family="ui-monospace,monospace" font-weight="800">LMCache</text>
-      <text x="360" y="160" text-anchor="middle" font-size="13" fill="#fff" font-family="ui-monospace,monospace">prefix index · block hashing · policy</text>
-      <text x="360" y="178" text-anchor="middle" font-size="13" fill="#b8c5d4" font-family="ui-monospace,monospace">decides WHAT KV cache to reuse</text>
+      <rect x="120" y="130" width="480" height="84" rx="6" fill="#1c3358" stroke="#00d4ff" stroke-width="2.5"/>
+      <text x="360" y="162" text-anchor="middle" font-size="20" fill="#00d4ff" font-family="ui-monospace,monospace" font-weight="800">LMCache</text>
+      <text x="360" y="184" text-anchor="middle" font-size="13" fill="#fff" font-family="ui-monospace,monospace">prefix index · block hashing · policy</text>
+      <text x="360" y="202" text-anchor="middle" font-size="13" fill="#b8c5d4" font-family="ui-monospace,monospace">decides WHAT KV cache to reuse</text>
     </g>
     <g>
-      <rect x="120" y="220" width="480" height="84" rx="6" fill="#1c3358" stroke="#00d4ff" stroke-width="2.5"/>
-      <text x="360" y="252" text-anchor="middle" font-size="20" fill="#00d4ff" font-family="ui-monospace,monospace" font-weight="800">NIXL</text>
-      <text x="360" y="274" text-anchor="middle" font-size="13" fill="#fff" font-family="ui-monospace,monospace">buffer-list descriptors · async · zero-copy</text>
-      <text x="360" y="292" text-anchor="middle" font-size="13" fill="#b8c5d4" font-family="ui-monospace,monospace">moves the data WHEREVER it lives</text>
+      <rect x="120" y="244" width="480" height="84" rx="6" fill="#1c3358" stroke="#00d4ff" stroke-width="2.5"/>
+      <text x="360" y="276" text-anchor="middle" font-size="20" fill="#00d4ff" font-family="ui-monospace,monospace" font-weight="800">NIXL</text>
+      <text x="360" y="298" text-anchor="middle" font-size="13" fill="#fff" font-family="ui-monospace,monospace">buffer-list descriptors · async · zero-copy</text>
+      <text x="360" y="316" text-anchor="middle" font-size="13" fill="#b8c5d4" font-family="ui-monospace,monospace">moves the data WHEREVER it lives</text>
     </g>
     <g font-family="ui-monospace,monospace" font-size="12" fill="#fff" font-weight="600">
-      <rect x="40"  y="332" width="84" height="28" rx="4" fill="#142540" stroke="#234670"/>
-      <text x="82"  y="350" text-anchor="middle">UCX/RDMA</text>
-      <rect x="134" y="332" width="78" height="28" rx="4" fill="#142540" stroke="#234670"/>
-      <text x="173" y="350" text-anchor="middle">CUDA IPC</text>
-      <rect x="222" y="332" width="80" height="28" rx="4" fill="#142540" stroke="#234670"/>
-      <text x="262" y="350" text-anchor="middle">Mooncake</text>
-      <rect x="312" y="332" width="80" height="28" rx="4" fill="#142540" stroke="#234670"/>
-      <text x="352" y="350" text-anchor="middle">POSIX I/O</text>
-      <rect x="402" y="332" width="84" height="28" rx="4" fill="#142540" stroke="#234670"/>
-      <text x="444" y="350" text-anchor="middle">Object</text>
-      <rect x="496" y="332" width="84" height="28" rx="4" fill="#142540" stroke="#234670"/>
-      <text x="538" y="350" text-anchor="middle">GPUDirect</text>
-      <rect x="590" y="332" width="92" height="28" rx="4" fill="#142540" stroke="#234670"/>
-      <text x="636" y="350" text-anchor="middle">future…</text>
+      <rect x="40"  y="356" width="84" height="28" rx="4" fill="#142540" stroke="#234670"/>
+      <text x="82"  y="374" text-anchor="middle">UCX/RDMA</text>
+      <rect x="134" y="356" width="78" height="28" rx="4" fill="#142540" stroke="#234670"/>
+      <text x="173" y="374" text-anchor="middle">CUDA IPC</text>
+      <rect x="222" y="356" width="80" height="28" rx="4" fill="#142540" stroke="#234670"/>
+      <text x="262" y="374" text-anchor="middle">Mooncake</text>
+      <rect x="312" y="356" width="80" height="28" rx="4" fill="#142540" stroke="#234670"/>
+      <text x="352" y="374" text-anchor="middle">POSIX I/O</text>
+      <rect x="402" y="356" width="84" height="28" rx="4" fill="#142540" stroke="#234670"/>
+      <text x="444" y="374" text-anchor="middle">Object</text>
+      <rect x="496" y="356" width="84" height="28" rx="4" fill="#142540" stroke="#234670"/>
+      <text x="538" y="374" text-anchor="middle">GPUDirect</text>
+      <rect x="590" y="356" width="92" height="28" rx="4" fill="#142540" stroke="#234670"/>
+      <text x="636" y="374" text-anchor="middle">future…</text>
     </g>
-    <line x1="360" y1="74"  x2="360" y2="102" stroke="#b8c5d4" stroke-width="1.5" marker-end="url(#arr2)"/>
-    <line x1="360" y1="190" x2="360" y2="216" stroke="#b8c5d4" stroke-width="1.5" marker-end="url(#arr2)"/>
-    <line x1="120" y1="304" x2="82" y2="332"  stroke="#234670"/>
-    <line x1="200" y1="304" x2="173" y2="332" stroke="#234670"/>
-    <line x1="280" y1="304" x2="262" y2="332" stroke="#234670"/>
-    <line x1="360" y1="304" x2="352" y2="332" stroke="#234670"/>
-    <line x1="440" y1="304" x2="444" y2="332" stroke="#234670"/>
-    <line x1="520" y1="304" x2="538" y2="332" stroke="#234670"/>
-    <line x1="600" y1="304" x2="636" y2="332" stroke="#234670"/>
+    <line x1="360" y1="98"  x2="360" y2="126" stroke="#b8c5d4" stroke-width="1.5" marker-end="url(#arr2)"/>
+    <text x="372" y="116" font-size="11" fill="#00d4ff" font-family="ui-monospace,monospace" font-weight="700">fixed-size KV blocks</text>
+    <line x1="360" y1="214" x2="360" y2="240" stroke="#b8c5d4" stroke-width="1.5" marker-end="url(#arr2)"/>
+    <text x="372" y="230" font-size="11" fill="#00d4ff" font-family="ui-monospace,monospace" font-weight="700">block lookups + (id, hash)</text>
+    <line x1="120" y1="328" x2="82" y2="356"  stroke="#234670"/>
+    <line x1="200" y1="328" x2="173" y2="356" stroke="#234670"/>
+    <line x1="280" y1="328" x2="262" y2="356" stroke="#234670"/>
+    <line x1="360" y1="328" x2="352" y2="356" stroke="#234670"/>
+    <line x1="440" y1="328" x2="444" y2="356" stroke="#234670"/>
+    <line x1="520" y1="328" x2="538" y2="356" stroke="#234670"/>
+    <line x1="600" y1="328" x2="636" y2="356" stroke="#234670"/>
 
-    <!-- VAST Data — concrete storage backend behind POSIX / Object / GPUDirect plugins -->
-    <line x1="352" y1="360" x2="352" y2="386" stroke="#00d4ff" stroke-dasharray="3 2" stroke-width="1.2" opacity="0.75"/>
-    <line x1="444" y1="360" x2="444" y2="386" stroke="#00d4ff" stroke-dasharray="3 2" stroke-width="1.2" opacity="0.75"/>
-    <line x1="538" y1="360" x2="538" y2="386" stroke="#00d4ff" stroke-dasharray="3 2" stroke-width="1.2" opacity="0.75"/>
+    <!-- VAST Data — concrete storage backend that NIXL plugins talk to -->
+    <!-- Solid connectors from POSIX / Object / GPUDirect down into VAST -->
+    <line x1="352" y1="384" x2="352" y2="408" stroke="#00d4ff" stroke-width="1.8"/>
+    <line x1="444" y1="384" x2="444" y2="408" stroke="#00d4ff" stroke-width="1.8"/>
+    <line x1="538" y1="384" x2="538" y2="408" stroke="#00d4ff" stroke-width="1.8"/>
 
-    <rect x="270" y="386" width="340" height="46" rx="6" fill="rgba(0,212,255,.08)" stroke="#00d4ff" stroke-width="1.5" stroke-dasharray="5 3"/>
+    <!-- VAST box — same size as LMCache / NIXL to read as a peer architectural layer -->
+    <rect x="120" y="410" width="480" height="84" rx="6" fill="#1c3358" stroke="#00d4ff" stroke-width="2.5"/>
 
-    <!-- VAST logo (scaled to ~30px tall) -->
-    <g transform="translate(286, 392) scale(0.32)">
+    <!-- Cyan accent bar on the left -->
+    <rect x="120" y="410" width="6" height="84" rx="2 0 0 2" fill="#00d4ff" opacity="0.9"/>
+
+    <!-- VAST logo, larger and vertically centered -->
+    <g transform="translate(146, 426) scale(0.55)">
       <path fill="#FFFFFF" d="m20.9 15.7h15.1c2.6 0.2 4.8-1.5 5.1-4.1 0.3-4.6-0.5-9.7-4.2-9.7h-29.8c-3.6 0-7.1 3.8-5.2 8.7 0.5 1.2 23.4 38.5 27.4 44.4 1.3 1.7 3.3 2.8 5.9 1.6 1.4-0.9 4.8-3 5.5-3.9 1.1-1.3 1.6-2.8 0.5-4.7-1.3-2.2-14.6-23.6-20.3-32.3z"/>
       <path fill="#1AB7EB" d="m112.6 1.9h-56c-2.8 0-4.5 2.2-4.5 5.9-0.2 3.3 0.1 7.8 4.5 7.9h42.2l-7.6 11.1c-1.2 1.9-0.8 4.1 1 5.6 4.6 3.1 7.7 5.7 10.8 2.1l14.6-23.2c2.2-3.2 0-8.9-5-9.4z"/>
       <path fill="#FFFFFF" d="m86.7 42c-1.6-0.5-3.9-0.7-5.9 1.7l-21.7 33.7-7.4-12.7c-1.3-2-3.3-3.1-5.3-2.1-1.3 0.5-3.9 2.1-5.5 3.2-1.9 1.4-2.4 3.3-1.5 5.7l14.5 23.6c2.7 4.1 7.8 4.1 9.8 0.8l28.7-44.9c1.1-1.7 1-4.5-1.1-5.8-1.5-1.1-3.5-2.6-4.6-3.2z"/>
     </g>
 
-    <text x="338" y="406" font-size="13" fill="#fff" font-family="ui-monospace,monospace" font-weight="700">VAST Data</text>
-    <text x="338" y="423" font-size="11" fill="#b8c5d4" font-family="ui-monospace,monospace">unified KV cache storage backend</text>
+    <text x="240" y="436" font-size="22" fill="#00d4ff" font-family="ui-monospace,monospace" font-weight="800" letter-spacing="0.5">VAST Data</text>
+    <text x="240" y="458" font-size="13" fill="#fff" font-family="ui-monospace,monospace" font-weight="600">unified KV cache storage backend</text>
+    <text x="240" y="478" font-size="11" fill="#b8c5d4" font-family="ui-monospace,monospace">speaks <tspan fill="#00d4ff" font-weight="700">POSIX · Object · GPUDirect</tspan> to NIXL above</text>
+
+    <!-- Concrete-backend tag, top-right INSIDE the box -->
+    <rect x="500" y="420" width="86" height="20" rx="3" fill="rgba(94,234,212,.12)" stroke="#5eead4" stroke-width="1"/>
+    <text x="543" y="434" text-anchor="middle" font-size="10" fill="#5eead4" font-family="ui-monospace,monospace" font-weight="700" letter-spacing="1.5">CONCRETE</text>
   `;
 }
 drawArch();
 
 /* ==============================================================
-   04 — LMCache tier ladder (where blocks live)
+   07 — LMCache tier ladder (where blocks live)
    ============================================================== */
 function drawTiering() {
   const svg = $('#tier-svg');
@@ -1762,7 +2398,7 @@ function drawSeq() {
 drawSeq();
 
 /* ==============================================================
-   04 — Examples (RAG, system prompt, multi-turn)
+   07 — Examples (RAG, system prompt, multi-turn)
    ============================================================== */
 function drawExRAG() {
   const svg = $('#ex-rag-svg');
@@ -1843,7 +2479,7 @@ $$('#ex-tabs .tab').forEach(btn => {
 });
 
 /* ==============================================================
-   04 — Prefix matching demo (live)
+   07 — Prefix matching demo (live)
    ============================================================== */
 const HISTORY = [
   "You are a helpful assistant. Summarize the following document for the legal team. The contract was signed on March 3rd",
@@ -1891,7 +2527,7 @@ renderHistory(); renderNewReq();
 $('#newreq').addEventListener('input', renderNewReq);
 
 /* ==============================================================
-   05 — NIXL: buffer list scatter
+   08 — NIXL: buffer list scatter
    ============================================================== */
 const TIERS = [
   { id:'gpu', name:'GPU HBM',      cls:'device-gpu', addrFn:i => `dev=gpu0,  addr=0x${(0x7f000000+i*0x4000).toString(16)}` },
@@ -1934,7 +2570,7 @@ renderBuffer();
 $('#shuffle').addEventListener('click', renderBuffer);
 
 /* ==============================================================
-   05 — NIXL design-win visuals: zero-copy + async
+   08 — NIXL design-win visuals: zero-copy + async
    ============================================================== */
 function drawZeroCopy() {
   const svg = $('#zerocopy-svg');
@@ -2104,7 +2740,7 @@ function drawBenchReal() {
     s += `<line x1="${xp}" x2="${xp}" y1="${H-padB}" y2="${H-padB+5}" stroke="#234670"/>`;
     s += `<text x="${xp}" y="${H-padB+22}" text-anchor="middle" font-size="12" fill="#b8c5d4" font-family="ui-monospace,monospace">${x}</text>`;
   });
-  s += `<text x="${(padL+W-padR)/2}" y="${H-10}" text-anchor="middle" font-size="13" fill="#b8c5d4" font-family="ui-monospace,monospace" font-weight="600">Input Sequence Length (k tokens, log scale)</text>`;
+  s += `<text x="${(padL+W-padR)/2}" y="${H-18}" text-anchor="middle" font-size="13" fill="#b8c5d4" font-family="ui-monospace,monospace" font-weight="600">Input Sequence Length (k tokens, log scale)</text>`;
 
   // Axes
   s += `<line x1="${padL}" x2="${W-padR}" y1="${H-padB}" y2="${H-padB}" stroke="#234670" stroke-width="1.5"/>`;
@@ -2138,6 +2774,49 @@ function drawBenchReal() {
   svg.innerHTML = s;
 }
 drawBenchReal();
+
+/* ==============================================================
+   09 — Recap journey diagram
+   ============================================================== */
+function drawRecap() {
+  const svg = $('#recap-svg');
+  if (!svg) return;
+  const W = 1300, H = 130;
+  const stages = [
+    { num: '01–02', label: 'THE WASTE',       sub: 'recompute',     color: '#ff6b6b' },
+    { num: '03',    label: 'PAGED ATTENTION', sub: 'the substrate', color: '#00d4ff' },
+    { num: '04–05', label: 'LMCACHE',         sub: 'the brain',     color: '#00d4ff' },
+    { num: '06',    label: 'NIXL',            sub: 'the muscle',    color: '#00d4ff' },
+    { num: '→',     label: 'KV AS STORAGE',   sub: 'the result',    color: '#5eead4' },
+  ];
+
+  const padX = 8, arrowW = 24;
+  const N = stages.length;
+  const nodeW = (W - padX*2 - arrowW*(N-1)) / N;
+  const nodeH = 84;
+  const nodeY = (H - nodeH) / 2;
+
+  let s = '';
+  for (let i = 0; i < N; i++) {
+    const x = padX + i * (nodeW + arrowW);
+    const stage = stages[i];
+
+    s += `<rect x="${x}" y="${nodeY}" width="${nodeW}" height="${nodeH}" rx="8"
+            fill="${stage.color}1f" stroke="${stage.color}" stroke-width="1.5"/>`;
+    s += `<text x="${x + nodeW/2}" y="${nodeY + 20}" text-anchor="middle" font-size="10" fill="${stage.color}" font-family="ui-monospace,monospace" font-weight="700" letter-spacing="2">${stage.num}</text>`;
+    s += `<text x="${x + nodeW/2}" y="${nodeY + 44}" text-anchor="middle" font-size="15" fill="#fff" font-family="ui-monospace,monospace" font-weight="800" letter-spacing="1.5">${stage.label}</text>`;
+    s += `<text x="${x + nodeW/2}" y="${nodeY + 64}" text-anchor="middle" font-size="11" fill="${stage.color}" font-family="ui-monospace,monospace" font-style="italic">${stage.sub}</text>`;
+
+    if (i < N-1) {
+      const arrX = x + nodeW;
+      const arrY = nodeY + nodeH/2;
+      s += `<line x1="${arrX + 2}" y1="${arrY}" x2="${arrX + arrowW - 8}" y2="${arrY}" stroke="#234670" stroke-width="2"/>`;
+      s += `<polygon points="${arrX + arrowW - 2},${arrY} ${arrX + arrowW - 11},${arrY-6} ${arrX + arrowW - 11},${arrY+6}" fill="#234670"/>`;
+    }
+  }
+  svg.innerHTML = s;
+}
+drawRecap();
 
 /* YouTube section uses plain anchor links — no JS needed.
    The iframe-embed approach was abandoned because sandboxed preview
