@@ -926,8 +926,8 @@
           <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
             <h3 class="section-h" style="margin:0;">Three requests · shared system prompt · different tails</h3>
             <div class="toggles" id="paged-mode">
-              <button data-mode="contiguous">Contiguous slabs (pre-paged)</button>
-              <button data-mode="paged" class="on">Paged blocks</button>
+              <button data-mode="contiguous" class="on">Contiguous slabs (pre-paged)</button>
+              <button data-mode="paged">Paged blocks</button>
             </div>
           </div>
           <svg id="paged-svg" viewBox="0 0 1300 440" preserveAspectRatio="xMidYMid meet" style="flex:1; min-height:0;"></svg>
@@ -1917,7 +1917,7 @@ playConv();
 /* ==============================================================
    04 — Paged attention: contiguous vs paged
    ============================================================== */
-const PAGED = { mode: 'paged' };
+const PAGED = { mode: 'contiguous' };
 function drawPaged() {
   const svg = $('#paged-svg');
   const W = 1300;
