@@ -1,0 +1,15 @@
+{
+  "name": "lmcache-nixl-explainer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Interactive single-file explainer for LMCache and NIXL",
+  "scripts": {
+    "start": "serve -l ${PORT:-3000}"
+  },
+  "dependencies": {
+    "serve": "^14.2.4"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

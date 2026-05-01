@@ -1,0 +1,6 @@
+{
+  "cleanUrls": false,
+  "rewrites": [
+    { "source": "/", "destination": "/lmcache-nixl-explainer.html" }
+  ]
+}
