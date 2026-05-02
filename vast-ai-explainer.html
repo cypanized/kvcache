@@ -1409,14 +1409,9 @@ drawLifecycle();
 /* ==============================================================
    Vector embeddings — 2D scatter + 3D vectors with cosine similarity
    ============================================================== */
-function drawVec2D() {
-  const svg = $('#vec2d-svg');
-  if (!svg) return;
-  const W = 600, H = 400;
-  const cx = W/2, cy = H/2;
-  const scale = 50;  // pixels per unit
-
-  const points = [
+const VEC2D = {
+  selected: null,  // label of currently selected point (string) or null
+  points: [
     { label:'cat',     x:-2.5, y: 1.5,  color:'#00d4ff' },
     { label:'dog',     x:-3.0, y: 1.0,  color:'#00d4ff' },
     { label:'puppy',   x:-2.0, y: 2.0,  color:'#00d4ff' },
@@ -1427,7 +1422,15 @@ function drawVec2D() {
     { label:'apple',   x: 0.3, y: 2.6,  color:'#fbbf24' },
     { label:'banana',  x: 0.7, y: 2.9,  color:'#fbbf24' },
     { label:'bread',   x: 0.0, y: 2.3,  color:'#fbbf24' },
-  ];
+  ],
+};
+
+function drawVec2D() {
+  const svg = $('#vec2d-svg');
+  if (!svg) return;
+  const W = 600, H = 400;
+  const cx = W/2, cy = H/2;
+  const scale = 50;
 
   let s = '';
 
@@ -1452,23 +1455,61 @@ function drawVec2D() {
   s += `<text x="${cx +  2.77*scale}" y="${cy - -1.43*scale + 78}" text-anchor="middle" font-size="11" fill="#5eead4" font-family="ui-monospace,monospace" font-weight="700" letter-spacing="2">VEHICLES</text>`;
   s += `<text x="${cx +  0.33*scale}" y="${cy - 2.6*scale - 50}" text-anchor="middle" font-size="11" fill="#fbbf24" font-family="ui-monospace,monospace" font-weight="700" letter-spacing="2">FOOD</text>`;
 
-  // Points + labels
-  points.forEach(p => {
+  // Points: bigger invisible hit area + visible dot. Selected point gets a halo + crosshair lines.
+  VEC2D.points.forEach(p => {
     const px = cx + p.x * scale;
     const py = cy - p.y * scale;
-    s += `<circle cx="${px}" cy="${py}" r="5" fill="${p.color}" stroke="#0a1628" stroke-width="1.2"/>`;
-    s += `<text x="${px+10}" y="${py+4}" font-size="11" fill="#fff" font-family="ui-monospace,monospace" font-weight="600">${p.label}</text>`;
+    const isSel = VEC2D.selected === p.label;
+    if (isSel) {
+      // Crosshair to the axes makes the coordinates visible at a glance
+      s += `<line x1="${px}" y1="${cy}" x2="${px}" y2="${py}" stroke="${p.color}" stroke-width="1" stroke-dasharray="3 3" opacity="0.7"/>`;
+      s += `<line x1="${cx}" y1="${py}" x2="${px}" y2="${py}" stroke="${p.color}" stroke-width="1" stroke-dasharray="3 3" opacity="0.7"/>`;
+      s += `<circle cx="${px}" cy="${py}" r="11" fill="none" stroke="${p.color}" stroke-width="1.2" opacity="0.6"/>`;
+    }
+    s += `<circle cx="${px}" cy="${py}" r="${isSel ? 6.5 : 5}" fill="${p.color}" stroke="#0a1628" stroke-width="1.2"/>`;
+    s += `<text x="${px+10}" y="${py+4}" font-size="11" fill="${isSel ? p.color : '#fff'}" font-family="ui-monospace,monospace" font-weight="${isSel ? '700' : '600'}">${p.label}</text>`;
+    // Invisible larger hit target for clicks
+    s += `<circle cx="${px}" cy="${py}" r="14" fill="transparent" data-label="${p.label}" style="cursor:pointer"/>`;
   });
+
+  // Selected-coordinate panel (top-left)
+  const sel = VEC2D.selected ? VEC2D.points.find(p => p.label === VEC2D.selected) : null;
+  if (sel) {
+    s += `<rect x="14" y="14" width="172" height="78" rx="6" fill="rgba(10,22,40,0.88)" stroke="${sel.color}" stroke-width="1.4"/>`;
+    s += `<text x="26" y="34" font-size="10" fill="${sel.color}" font-family="ui-monospace,monospace" font-weight="700" letter-spacing="2">SELECTED</text>`;
+    s += `<text x="26" y="56" font-size="14" fill="#fff" font-family="ui-monospace,monospace" font-weight="800">${sel.label}</text>`;
+    s += `<text x="26" y="78" font-size="13" fill="${sel.color}" font-family="ui-monospace,monospace">[ ${sel.x.toFixed(2)}, ${sel.y.toFixed(2)} ]</text>`;
+  } else {
+    s += `<text x="14" y="${H-14}" font-size="11" fill="#7a8da3" font-family="ui-monospace,monospace">click a point to see its coordinates</text>`;
+  }
 
   svg.innerHTML = s;
 }
+
+// One-time setup: click anywhere on a point's hit-area selects it; click elsewhere clears
+(function setupVec2DInteraction() {
+  const svg = document.getElementById('vec2d-svg');
+  if (!svg) return;
+  svg.addEventListener('click', e => {
+    const t = e.target;
+    if (t && t.dataset && t.dataset.label) {
+      VEC2D.selected = (VEC2D.selected === t.dataset.label) ? null : t.dataset.label;
+    } else {
+      VEC2D.selected = null;
+    }
+    drawVec2D();
+  });
+})();
 
 const VEC3D = {
   yaw: 0.55,
   pitch: -0.32,
   scale: 56,
   dragging: false,
+  moved: false,                 // tracks whether the down→up was a drag
   lastX: 0, lastY: 0,
+  startX: 0, startY: 0,         // mousedown position
+  selected: null,               // label of selected vector (string) or null
   vectors: [
     { label:'cat',    v:[-2.0,  1.5, -1.8], color:'#00d4ff' },
     { label:'dog',    v:[-2.2,  1.2, -1.6], color:'#00d4ff' },
@@ -1549,10 +1590,27 @@ function drawVec3D() {
   const projected = VEC3D.vectors.map(v => ({ ...v, p: proj(v.v) }));
   projected.sort((a, b) => a.p.z - b.p.z);
   projected.forEach(v => {
-    s += `<line x1="${O.sx}" y1="${O.sy}" x2="${v.p.sx}" y2="${v.p.sy}" stroke="${v.color}" stroke-width="1.6" opacity="0.78"/>`;
-    s += `<circle cx="${v.p.sx}" cy="${v.p.sy}" r="4.5" fill="${v.color}" stroke="#0a1628" stroke-width="1"/>`;
-    s += `<text x="${v.p.sx+8}" y="${v.p.sy+4}" font-size="11" fill="#fff" font-family="ui-monospace,monospace" font-weight="600">${v.label}</text>`;
+    const isSel = VEC3D.selected === v.label;
+    if (isSel) {
+      s += `<circle cx="${v.p.sx}" cy="${v.p.sy}" r="11" fill="none" stroke="${v.color}" stroke-width="1.4" opacity="0.7"/>`;
+    }
+    s += `<line x1="${O.sx}" y1="${O.sy}" x2="${v.p.sx}" y2="${v.p.sy}" stroke="${v.color}" stroke-width="${isSel ? '2.4' : '1.6'}" opacity="${isSel ? '1' : '0.78'}"/>`;
+    s += `<circle cx="${v.p.sx}" cy="${v.p.sy}" r="${isSel ? '6' : '4.5'}" fill="${v.color}" stroke="#0a1628" stroke-width="1"/>`;
+    s += `<text x="${v.p.sx+8}" y="${v.p.sy+4}" font-size="11" fill="${isSel ? v.color : '#fff'}" font-family="ui-monospace,monospace" font-weight="${isSel ? '700' : '600'}">${v.label}</text>`;
+    // Invisible hit target for clicks
+    s += `<circle cx="${v.p.sx}" cy="${v.p.sy}" r="14" fill="transparent" data-label="${v.label}" style="cursor:pointer"/>`;
   });
+
+  // Selected vector panel (top-right) — shows the original 3D coordinates and magnitude
+  const sel = VEC3D.selected ? VEC3D.vectors.find(v => v.label === VEC3D.selected) : null;
+  if (sel) {
+    const mag = Math.hypot(sel.v[0], sel.v[1], sel.v[2]);
+    s += `<rect x="${W-244}" y="14" width="230" height="100" rx="6" fill="rgba(10,22,40,0.92)" stroke="${sel.color}" stroke-width="1.4"/>`;
+    s += `<text x="${W-232}" y="34" font-size="10" fill="${sel.color}" font-family="ui-monospace,monospace" font-weight="700" letter-spacing="2">SELECTED</text>`;
+    s += `<text x="${W-232}" y="56" font-size="14" fill="#fff" font-family="ui-monospace,monospace" font-weight="800">${sel.label}</text>`;
+    s += `<text x="${W-232}" y="78" font-size="13" fill="${sel.color}" font-family="ui-monospace,monospace">[ ${sel.v[0].toFixed(2)}, ${sel.v[1].toFixed(2)}, ${sel.v[2].toFixed(2)} ]</text>`;
+    s += `<text x="${W-232}" y="98" font-size="11" fill="#7a8da3" font-family="ui-monospace,monospace">|v| = ${mag.toFixed(2)}</text>`;
+  }
 
   // Cosine-similarity overlay (always pinned top-left, doesn't rotate)
   const simCatDog = vec3dCosine(cat, dog);
@@ -1564,7 +1622,7 @@ function drawVec3D() {
   s += `<text x="26" y="98" font-size="13" fill="#ff6b6b" font-family="ui-monospace,monospace" font-weight="700">cat &harr; car &nbsp; ${simCatCar.toFixed(2)}</text>`;
 
   // Hint pinned bottom-right
-  s += `<text x="${W-14}" y="${H-14}" text-anchor="end" font-size="11" fill="#7a8da3" font-family="ui-monospace,monospace">drag to rotate &middot; scroll to zoom</text>`;
+  s += `<text x="${W-14}" y="${H-14}" text-anchor="end" font-size="11" fill="#7a8da3" font-family="ui-monospace,monospace">click a vector &middot; drag to rotate &middot; scroll to zoom</text>`;
 
   svg.innerHTML = s;
 }
@@ -1576,17 +1634,26 @@ function drawVec3D() {
   svg.style.userSelect = 'none';
   svg.style.touchAction = 'none';
 
+  const DRAG_THRESHOLD = 4;  // px — must move this far for it to count as a drag
+
   function onDown(e) {
     VEC3D.dragging = true;
+    VEC3D.moved = false;
     const pt = e.touches ? e.touches[0] : e;
     VEC3D.lastX = pt.clientX;
     VEC3D.lastY = pt.clientY;
+    VEC3D.startX = pt.clientX;
+    VEC3D.startY = pt.clientY;
     svg.style.cursor = 'grabbing';
-    e.preventDefault();
+    // Don't preventDefault here — let click events propagate if no drag happens
   }
   function onMove(e) {
     if (!VEC3D.dragging) return;
     const pt = e.touches ? e.touches[0] : e;
+    const totalDx = pt.clientX - VEC3D.startX;
+    const totalDy = pt.clientY - VEC3D.startY;
+    if (!VEC3D.moved && Math.hypot(totalDx, totalDy) < DRAG_THRESHOLD) return;
+    VEC3D.moved = true;
     const dx = pt.clientX - VEC3D.lastX;
     const dy = pt.clientY - VEC3D.lastY;
     VEC3D.yaw   += dx * 0.012;
@@ -1610,6 +1677,18 @@ function drawVec3D() {
   svg.addEventListener('touchstart', onDown, { passive: false });
   svg.addEventListener('touchmove',  onMove, { passive: false });
   svg.addEventListener('touchend', onUp);
+
+  // Click selects a vector. Suppress the click if it was preceded by a drag.
+  svg.addEventListener('click', e => {
+    if (VEC3D.moved) { VEC3D.moved = false; return; }
+    const t = e.target;
+    if (t && t.dataset && t.dataset.label) {
+      VEC3D.selected = (VEC3D.selected === t.dataset.label) ? null : t.dataset.label;
+    } else {
+      VEC3D.selected = null;
+    }
+    drawVec3D();
+  });
 
   svg.addEventListener('wheel', e => {
     e.preventDefault();
