@@ -1463,97 +1463,162 @@ function drawVec2D() {
   svg.innerHTML = s;
 }
 
+const VEC3D = {
+  yaw: 0.55,
+  pitch: -0.32,
+  scale: 56,
+  dragging: false,
+  lastX: 0, lastY: 0,
+  vectors: [
+    { label:'cat',    v:[-2.0,  1.5, -1.8], color:'#00d4ff' },
+    { label:'dog',    v:[-2.2,  1.2, -1.6], color:'#00d4ff' },
+    { label:'puppy',  v:[-1.7,  1.7, -2.0], color:'#00d4ff' },
+    { label:'car',    v:[ 2.0,  1.0,  1.5], color:'#5eead4' },
+    { label:'truck',  v:[ 2.3,  0.8,  1.3], color:'#5eead4' },
+    { label:'sedan',  v:[ 2.1,  1.2,  1.6], color:'#5eead4' },
+    { label:'apple',  v:[ 0.5, -1.8,  0.7], color:'#fbbf24' },
+    { label:'banana', v:[ 0.6, -1.6,  0.5], color:'#fbbf24' },
+  ],
+};
+
+function vec3dCosine(a, b) {
+  const dot = a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+  const magA = Math.hypot(a[0], a[1], a[2]);
+  const magB = Math.hypot(b[0], b[1], b[2]);
+  return dot / (magA * magB);
+}
+
 function drawVec3D() {
   const svg = $('#vec3d-svg');
   if (!svg) return;
   const W = 700, H = 460;
-  const cx = W/2 + 30, cy = H/2 + 20;
-  const scale = 56;
-  const cos30 = Math.sqrt(3) / 2;
-  const sin30 = 0.5;
-  function project(x, y, z) {
-    const sx = cx + (x - z) * cos30 * scale;
-    const sy = cy - y * scale + (x + z) * sin30 * scale * 0.5;
-    return [sx, sy];
-  }
+  const cx = W/2, cy = H/2;
+  const scale = VEC3D.scale;
 
-  const vectors = [
-    { label:'cat',    v:[-2.0,  1.5, -1.8], cluster:'A', color:'#00d4ff' },
-    { label:'dog',    v:[-2.2,  1.2, -1.6], cluster:'A', color:'#00d4ff' },
-    { label:'puppy',  v:[-1.7,  1.7, -2.0], cluster:'A', color:'#00d4ff' },
-    { label:'car',    v:[ 2.0,  1.0,  1.5], cluster:'B', color:'#5eead4' },
-    { label:'truck',  v:[ 2.3,  0.8,  1.3], cluster:'B', color:'#5eead4' },
-    { label:'sedan',  v:[ 2.1,  1.2,  1.6], cluster:'B', color:'#5eead4' },
-    { label:'apple',  v:[ 0.5, -1.8,  0.7], cluster:'C', color:'#fbbf24' },
-    { label:'banana', v:[ 0.6, -1.6,  0.5], cluster:'C', color:'#fbbf24' },
-  ];
+  const cosY = Math.cos(VEC3D.yaw), sinY = Math.sin(VEC3D.yaw);
+  const cosP = Math.cos(VEC3D.pitch), sinP = Math.sin(VEC3D.pitch);
 
-  function cosineSim(a, b) {
-    const dot = a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
-    const magA = Math.sqrt(a[0]**2 + a[1]**2 + a[2]**2);
-    const magB = Math.sqrt(b[0]**2 + b[1]**2 + b[2]**2);
-    return dot / (magA * magB);
+  // Rotate yaw (about y-axis) then pitch (about x-axis); return [x, y, z, screenX, screenY]
+  function proj(p) {
+    const x = p[0]*cosY + p[2]*sinY;
+    const y = p[1];
+    const z = -p[0]*sinY + p[2]*cosY;
+    const yr = y*cosP - z*sinP;
+    const zr = y*sinP + z*cosP;
+    return { x, y: yr, z: zr, sx: cx + x*scale, sy: cy - yr*scale };
   }
 
   let s = '';
 
-  // Floor grid (z, x plane at y=0)
-  for (let i = -3; i <= 3; i++) {
-    const [a1, b1] = project(i, 0, -3);
-    const [a2, b2] = project(i, 0,  3);
-    s += `<line x1="${a1}" y1="${b1}" x2="${a2}" y2="${b2}" stroke="#162a4a" stroke-width="0.5"/>`;
-    const [c1, d1] = project(-3, 0, i);
-    const [c2, d2] = project( 3, 0, i);
-    s += `<line x1="${c1}" y1="${d1}" x2="${c2}" y2="${d2}" stroke="#162a4a" stroke-width="0.5"/>`;
-  }
-
-  // Axes
-  const [ox, oy] = project(0, 0, 0);
-  const [xax, xay] = project(3, 0, 0);
-  const [yax, yay] = project(0, 3, 0);
-  const [zax, zay] = project(0, 0, 3);
-  s += `<line x1="${ox}" y1="${oy}" x2="${xax}" y2="${xay}" stroke="#7a8da3" stroke-width="1.2"/>`;
-  s += `<line x1="${ox}" y1="${oy}" x2="${yax}" y2="${yay}" stroke="#7a8da3" stroke-width="1.2"/>`;
-  s += `<line x1="${ox}" y1="${oy}" x2="${zax}" y2="${zay}" stroke="#7a8da3" stroke-width="1.2"/>`;
-  s += `<text x="${xax+8}" y="${xay+5}" font-size="11" fill="#7a8da3" font-family="ui-monospace,monospace">x</text>`;
-  s += `<text x="${yax-12}" y="${yay-2}" font-size="11" fill="#7a8da3" font-family="ui-monospace,monospace">y</text>`;
-  s += `<text x="${zax-14}" y="${zay+5}" font-size="11" fill="#7a8da3" font-family="ui-monospace,monospace">z</text>`;
-
-  // Vectors as arrows from origin (sort by depth so back vectors render first)
-  const sorted = vectors
-    .map((vec, i) => ({ vec, i, depth: vec.v[0] + vec.v[2] }))
-    .sort((a, b) => a.depth - b.depth);
-
-  sorted.forEach(({ vec }) => {
-    const [px, py] = project(vec.v[0], vec.v[1], vec.v[2]);
-    s += `<line x1="${ox}" y1="${oy}" x2="${px}" y2="${py}" stroke="${vec.color}" stroke-width="1.6" opacity="0.75"/>`;
-    s += `<circle cx="${px}" cy="${py}" r="4.5" fill="${vec.color}" stroke="#0a1628" stroke-width="1"/>`;
-    s += `<text x="${px+8}" y="${py+4}" font-size="11" fill="#fff" font-family="ui-monospace,monospace" font-weight="600">${vec.label}</text>`;
+  // Bounding box (12 edges) — gives spatial reference as the user rotates
+  const corners = [
+    [-3,-3,-3],[ 3,-3,-3],[ 3,-3, 3],[-3,-3, 3],
+    [-3, 3,-3],[ 3, 3,-3],[ 3, 3, 3],[-3, 3, 3],
+  ];
+  const edges = [
+    [0,1],[1,2],[2,3],[3,0], // bottom
+    [4,5],[5,6],[6,7],[7,4], // top
+    [0,4],[1,5],[2,6],[3,7], // verticals
+  ];
+  const projC = corners.map(proj);
+  edges.forEach(([a, b]) => {
+    s += `<line x1="${projC[a].sx}" y1="${projC[a].sy}" x2="${projC[b].sx}" y2="${projC[b].sy}" stroke="#162a4a" stroke-width="0.7"/>`;
   });
 
-  // Highlight a similar pair (cat ↔ dog) and a dissimilar pair (cat ↔ car)
-  const cat = vectors[0].v;
-  const dog = vectors[1].v;
-  const car = vectors[3].v;
-  const simCatDog = cosineSim(cat, dog);
-  const simCatCar = cosineSim(cat, car);
+  // Axes (red x · green y · blue z)
+  const O = proj([0,0,0]);
+  const X = proj([2.7,0,0]);
+  const Y = proj([0,2.7,0]);
+  const Z = proj([0,0,2.7]);
+  s += `<line x1="${O.sx}" y1="${O.sy}" x2="${X.sx}" y2="${X.sy}" stroke="#7a8da3" stroke-width="1.2"/>`;
+  s += `<line x1="${O.sx}" y1="${O.sy}" x2="${Y.sx}" y2="${Y.sy}" stroke="#7a8da3" stroke-width="1.2"/>`;
+  s += `<line x1="${O.sx}" y1="${O.sy}" x2="${Z.sx}" y2="${Z.sy}" stroke="#7a8da3" stroke-width="1.2"/>`;
+  s += `<text x="${X.sx+8}" y="${X.sy+5}" font-size="11" fill="#7a8da3" font-family="ui-monospace,monospace">x</text>`;
+  s += `<text x="${Y.sx+5}" y="${Y.sy-2}" font-size="11" fill="#7a8da3" font-family="ui-monospace,monospace">y</text>`;
+  s += `<text x="${Z.sx+8}" y="${Z.sy+5}" font-size="11" fill="#7a8da3" font-family="ui-monospace,monospace">z</text>`;
 
-  // Connecting arcs to show angle
-  const [catX, catY] = project(...cat);
-  const [dogX, dogY] = project(...dog);
-  const [carX, carY] = project(...car);
-  s += `<path d="M ${catX} ${catY} L ${ox} ${oy} L ${dogX} ${dogY}" stroke="#5eead4" stroke-width="1.2" fill="none" stroke-dasharray="3 3" opacity="0.7"/>`;
-  s += `<path d="M ${catX} ${catY} L ${ox} ${oy} L ${carX} ${carY}" stroke="#ff6b6b" stroke-width="1.2" fill="none" stroke-dasharray="3 3" opacity="0.55"/>`;
+  // Highlight angle lines first (cat↔dog and cat↔car), so vectors render on top
+  const cat = VEC3D.vectors[0].v;
+  const dog = VEC3D.vectors[1].v;
+  const car = VEC3D.vectors[3].v;
+  const pCat = proj(cat), pDog = proj(dog), pCar = proj(car);
+  s += `<path d="M ${pCat.sx} ${pCat.sy} L ${O.sx} ${O.sy} L ${pDog.sx} ${pDog.sy}" stroke="#5eead4" stroke-width="1.2" fill="none" stroke-dasharray="3 3" opacity="0.7"/>`;
+  s += `<path d="M ${pCat.sx} ${pCat.sy} L ${O.sx} ${O.sy} L ${pCar.sx} ${pCar.sy}" stroke="#ff6b6b" stroke-width="1.2" fill="none" stroke-dasharray="3 3" opacity="0.55"/>`;
 
-  // Cosine similarity panel (top-left)
-  s += `<rect x="14" y="14" width="220" height="92" rx="6" fill="rgba(10,22,40,0.85)" stroke="#234670" stroke-width="1"/>`;
+  // Vectors — sort back-to-front so closer points render last
+  const projected = VEC3D.vectors.map(v => ({ ...v, p: proj(v.v) }));
+  projected.sort((a, b) => a.p.z - b.p.z);
+  projected.forEach(v => {
+    s += `<line x1="${O.sx}" y1="${O.sy}" x2="${v.p.sx}" y2="${v.p.sy}" stroke="${v.color}" stroke-width="1.6" opacity="0.78"/>`;
+    s += `<circle cx="${v.p.sx}" cy="${v.p.sy}" r="4.5" fill="${v.color}" stroke="#0a1628" stroke-width="1"/>`;
+    s += `<text x="${v.p.sx+8}" y="${v.p.sy+4}" font-size="11" fill="#fff" font-family="ui-monospace,monospace" font-weight="600">${v.label}</text>`;
+  });
+
+  // Cosine-similarity overlay (always pinned top-left, doesn't rotate)
+  const simCatDog = vec3dCosine(cat, dog);
+  const simCatCar = vec3dCosine(cat, car);
+  s += `<rect x="14" y="14" width="220" height="92" rx="6" fill="rgba(10,22,40,0.88)" stroke="#234670" stroke-width="1"/>`;
   s += `<text x="26" y="36" font-size="11" fill="var(--vast-cyan)" font-family="ui-monospace,monospace" font-weight="700" letter-spacing="2">COSINE SIMILARITY</text>`;
   s += `<text x="26" y="60" font-size="13" fill="#5eead4" font-family="ui-monospace,monospace" font-weight="700">cat &harr; dog &nbsp; ${simCatDog.toFixed(2)}</text>`;
   s += `<text x="26" y="80" font-size="11" fill="#7a8da3" font-family="ui-monospace,monospace">small angle &rarr; same cluster</text>`;
   s += `<text x="26" y="98" font-size="13" fill="#ff6b6b" font-family="ui-monospace,monospace" font-weight="700">cat &harr; car &nbsp; ${simCatCar.toFixed(2)}</text>`;
 
+  // Hint pinned bottom-right
+  s += `<text x="${W-14}" y="${H-14}" text-anchor="end" font-size="11" fill="#7a8da3" font-family="ui-monospace,monospace">drag to rotate &middot; scroll to zoom</text>`;
+
   svg.innerHTML = s;
 }
+
+(function setupVec3DInteraction() {
+  const svg = document.getElementById('vec3d-svg');
+  if (!svg) return;
+  svg.style.cursor = 'grab';
+  svg.style.userSelect = 'none';
+  svg.style.touchAction = 'none';
+
+  function onDown(e) {
+    VEC3D.dragging = true;
+    const pt = e.touches ? e.touches[0] : e;
+    VEC3D.lastX = pt.clientX;
+    VEC3D.lastY = pt.clientY;
+    svg.style.cursor = 'grabbing';
+    e.preventDefault();
+  }
+  function onMove(e) {
+    if (!VEC3D.dragging) return;
+    const pt = e.touches ? e.touches[0] : e;
+    const dx = pt.clientX - VEC3D.lastX;
+    const dy = pt.clientY - VEC3D.lastY;
+    VEC3D.yaw   += dx * 0.012;
+    VEC3D.pitch += dy * 0.012;
+    VEC3D.pitch = Math.max(-1.4, Math.min(1.4, VEC3D.pitch));
+    VEC3D.lastX = pt.clientX;
+    VEC3D.lastY = pt.clientY;
+    drawVec3D();
+    if (e.cancelable) e.preventDefault();
+  }
+  function onUp() {
+    if (VEC3D.dragging) {
+      VEC3D.dragging = false;
+      svg.style.cursor = 'grab';
+    }
+  }
+
+  svg.addEventListener('mousedown', onDown);
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+  svg.addEventListener('touchstart', onDown, { passive: false });
+  svg.addEventListener('touchmove',  onMove, { passive: false });
+  svg.addEventListener('touchend', onUp);
+
+  svg.addEventListener('wheel', e => {
+    e.preventDefault();
+    VEC3D.scale *= e.deltaY > 0 ? 0.9 : 1.1;
+    VEC3D.scale = Math.max(20, Math.min(140, VEC3D.scale));
+    drawVec3D();
+  }, { passive: false });
+})();
+
 drawVec2D();
 drawVec3D();
 
