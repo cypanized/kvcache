@@ -507,8 +507,8 @@
   .panel::-webkit-scrollbar-thumb, .tab-pane::-webkit-scrollbar-thumb, .overview::-webkit-scrollbar-thumb { background: var(--vast-line); border-radius: 4px; }
 
   /* Compact "Why VAST" grid (slide 7, data-slide=6) — 6 cards fit comfortably */
-  section[data-slide="7"] .panel { padding: 14px 18px; }
-  section[data-slide="7"] p { line-height: 1.45; }
+  section[data-slide="8"] .panel { padding: 14px 18px; }
+  section[data-slide="8"] p { line-height: 1.45; }
 
   /* ===== YouTube thumbnail card ===== */
   .yt-thumb {
@@ -718,7 +718,7 @@
   </div>
   <div class="spacer"></div>
   <div class="progress"><div id="progress-bar"></div></div>
-  <span class="counter" id="counter">1 / 9</span>
+  <span class="counter" id="counter">1 / 10</span>
 </header>
 
 <main class="deck" id="deck">
@@ -990,9 +990,51 @@
   </section>
 
   <!-- ============================================================ -->
-  <!-- SLIDE 8 — Why VAST -->
+  <!-- SLIDE 8 — RAG retrieval -->
   <!-- ============================================================ -->
   <section class="slide" data-slide="7">
+    <div class="slide-head">
+      <div class="accent-bar"></div>
+      <div class="slide-eyebrow">05 &middot; Inference &mdash; retrieval</div>
+      <h2 class="slide-title">RAG retrieval &mdash; query &rarr; embedding &rarr; top-K</h2>
+      <p class="slide-sub">A user query becomes a vector in the same embedding space as your documents. Cosine similarity finds the closest chunks; VAST returns them in milliseconds.</p>
+    </div>
+    <div class="slide-body">
+      <!-- Query selector with embedding output -->
+      <div class="panel" style="padding: 12px 18px; flex: 0 0 auto;">
+        <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap;">
+          <span style="font-family:var(--fontmono); font-size:11px; color:var(--vast-cyan); letter-spacing:.16em; font-weight:700;">USER QUERY</span>
+          <div class="tabs" id="rag-queries" style="margin:0; padding:0; justify-content:flex-start;">
+            <button class="tab on" data-q="animals">"Tell me about cats"</button>
+            <button class="tab" data-q="vehicles">"How do trucks work?"</button>
+            <button class="tab" data-q="food">"Healthy fruits to eat"</button>
+          </div>
+          <span style="color:var(--vast-silver); font-family:var(--fontmono); font-size:11px;">&rarr; embed &rarr;</span>
+          <span class="pill" id="rag-vec-display" style="font-size:13px;">[-2.50, 1.70]</span>
+        </div>
+      </div>
+
+      <div class="grid-2" style="flex: 1 1 auto; min-height: 0;">
+        <div class="panel bare" style="display:flex; flex-direction:column; gap:8px; min-height:0;">
+          <h3 class="section-h" style="font-size:13px;">Nearest-neighbor search &middot; vectors stored in VAST</h3>
+          <svg id="rag-svg" viewBox="0 0 600 400" preserveAspectRatio="xMidYMid meet" style="flex:1; min-height:0;"></svg>
+        </div>
+        <div class="panel" style="display:flex; flex-direction:column; gap:10px; min-height:0;">
+          <h3 class="section-h" style="font-size:13px;">Top-3 matches &rarr; context for the LLM</h3>
+          <div id="rag-results" style="display:flex; flex-direction:column; gap:10px; flex:1; min-height:0; overflow:auto;"></div>
+        </div>
+      </div>
+
+      <div class="callout" style="flex:0 0 auto;">
+        At production scale this is a search across <strong>billions of vectors</strong> with sub-ms latency. The vector index, the source chunks, and the embedding cache all live in the same VAST namespace &mdash; no extra service hops, no cross-tier copies.
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SLIDE 9 — Why VAST -->
+  <!-- ============================================================ -->
+  <section class="slide" data-slide="8">
     <div class="slide-head">
       <div class="accent-bar"></div>
       <div class="slide-eyebrow">06 &middot; Why VAST</div>
@@ -1036,9 +1078,9 @@
   </section>
 
   <!-- ============================================================ -->
-  <!-- SLIDE 9 — Bottom line -->
+  <!-- SLIDE 10 — Bottom line -->
   <!-- ============================================================ -->
-  <section class="slide" data-slide="8">
+  <section class="slide" data-slide="9">
     <div class="slide-head">
       <div class="accent-bar"></div>
       <div class="slide-eyebrow">07 &middot; Bottom line</div>
@@ -1195,6 +1237,7 @@ const SLIDE_TITLES = [
   { num:'04',  title:'Training',           desc:'Reads + checkpoint storms' },
   { num:'05',  title:'Inference',          desc:'Weights · KV cache · vectors' },
   { num:'05',  title:'Vector embeddings',  desc:'2D / 3D space + cosine similarity' },
+  { num:'05',  title:'RAG retrieval',       desc:'Query → embed → top-K from VAST' },
   { num:'06',  title:'Why VAST',           desc:'The six attributes' },
   { num:'07',  title:'Bottom line',        desc:'Takeaways' },
 ];
@@ -1700,6 +1743,148 @@ function drawVec3D() {
 
 drawVec2D();
 drawVec3D();
+
+/* ==============================================================
+   RAG retrieval — query → embed → top-K cosine similarity
+   ============================================================== */
+const RAG = {
+  selected: 'animals',
+  queries: {
+    animals:  { text:'"Tell me about cats"',     vec:[-2.5,  1.7], color:'#00d4ff' },
+    vehicles: { text:'"How do trucks work?"',    vec:[ 2.7, -1.4], color:'#5eead4' },
+    food:     { text:'"Healthy fruits to eat"',  vec:[ 0.4,  2.7], color:'#fbbf24' },
+  },
+  docs: [
+    { id:'doc-001', vec:[-2.4,  1.4], cluster:'animals',  chunk:'Cats are independent felines that purr when content. Lifespan ~15 years.' },
+    { id:'doc-002', vec:[-2.1,  1.9], cluster:'animals',  chunk:'A puppy learns commands through positive reinforcement and short repetitions.' },
+    { id:'doc-003', vec:[-2.8,  1.3], cluster:'animals',  chunk:'Domestic dogs descended from wolves over 30,000 years ago.' },
+    { id:'doc-004', vec:[-2.6,  1.8], cluster:'animals',  chunk:'Kittens open their eyes around 7-10 days after birth and start exploring.' },
+    { id:'doc-005', vec:[ 2.6, -1.6], cluster:'vehicles', chunk:'Trucks use diesel engines for high-torque applications and freight hauling.' },
+    { id:'doc-006', vec:[ 2.9, -1.2], cluster:'vehicles', chunk:'Modern cars feature regenerative braking and stop-start technology.' },
+    { id:'doc-007', vec:[ 2.3, -1.8], cluster:'vehicles', chunk:'A sedan typically holds five passengers and has a separate trunk compartment.' },
+    { id:'doc-008', vec:[ 0.6,  2.8], cluster:'food',     chunk:'Apples contain fiber, vitamin C, and beneficial polyphenols for gut health.' },
+    { id:'doc-009', vec:[ 0.2,  2.5], cluster:'food',     chunk:'Bananas are a quick source of potassium and natural sugars for energy.' },
+    { id:'doc-010', vec:[-0.1,  2.7], cluster:'food',     chunk:'Berries are rich in antioxidants and have a low glycemic index.' },
+    { id:'doc-011', vec:[ 0.0,  0.0], cluster:'other',    chunk:'The capital of France is Paris, founded over 2,000 years ago.' },
+    { id:'doc-012', vec:[-0.5, -0.5], cluster:'other',    chunk:'Photosynthesis converts sunlight into chemical energy stored as glucose.' },
+  ],
+};
+
+const RAG_CLUSTER_COLOR = {
+  animals: '#00d4ff', vehicles: '#5eead4', food: '#fbbf24', other: '#7a8da3',
+};
+
+function ragCosine(a, b) {
+  return (a[0]*b[0] + a[1]*b[1]) / (Math.hypot(a[0], a[1]) * Math.hypot(b[0], b[1]));
+}
+
+function ragStarPoints(cx, cy, outer, inner) {
+  const pts = [];
+  for (let i = 0; i < 10; i++) {
+    const r = (i % 2 === 0) ? outer : inner;
+    const ang = -Math.PI/2 + i * Math.PI/5;
+    pts.push(`${(cx + Math.cos(ang)*r).toFixed(2)},${(cy + Math.sin(ang)*r).toFixed(2)}`);
+  }
+  return pts.join(' ');
+}
+
+function drawRAG() {
+  const svg = $('#rag-svg');
+  if (!svg) return;
+  const q = RAG.queries[RAG.selected];
+
+  // Rank documents by cosine similarity to the query vector
+  const ranked = RAG.docs
+    .map(d => ({ ...d, sim: ragCosine(q.vec, d.vec) }))
+    .sort((a, b) => b.sim - a.sim);
+  const top3 = ranked.slice(0, 3);
+  const topIds = new Set(top3.map(d => d.id));
+
+  // Update the embedding-output pill
+  const pill = $('#rag-vec-display');
+  if (pill) {
+    pill.textContent = `[${q.vec[0].toFixed(2)}, ${q.vec[1].toFixed(2)}]`;
+    pill.style.color = q.color;
+    pill.style.borderColor = q.color;
+  }
+
+  // SVG: 2-D vector space with all docs + query star + top-3 highlights
+  const W = 600, H = 400;
+  const cx = W/2, cy = H/2;
+  const scale = 60;
+  let s = '';
+
+  // Grid + axes
+  for (let i = -3; i <= 3; i++) {
+    s += `<line x1="${cx + i*scale}" y1="20" x2="${cx + i*scale}" y2="${H-20}" stroke="#162a4a" stroke-width="0.5"/>`;
+    s += `<line x1="20" y1="${cy + i*scale}" x2="${W-20}" y2="${cy + i*scale}" stroke="#162a4a" stroke-width="0.5"/>`;
+  }
+  s += `<line x1="20" y1="${cy}" x2="${W-20}" y2="${cy}" stroke="#234670" stroke-width="1.2"/>`;
+  s += `<line x1="${cx}" y1="20" x2="${cx}" y2="${H-20}" stroke="#234670" stroke-width="1.2"/>`;
+
+  // Connection lines from query to top-3 (drawn first so dots render on top)
+  const qx = cx + q.vec[0] * scale;
+  const qy = cy - q.vec[1] * scale;
+  top3.forEach(d => {
+    const dx = cx + d.vec[0] * scale;
+    const dy = cy - d.vec[1] * scale;
+    s += `<line x1="${qx}" y1="${qy}" x2="${dx}" y2="${dy}" stroke="${q.color}" stroke-width="1.4" stroke-dasharray="4 3" opacity="0.75"/>`;
+  });
+
+  // All doc dots — use the ranked array so we have .sim for each
+  ranked.forEach(d => {
+    const dx = cx + d.vec[0] * scale;
+    const dy = cy - d.vec[1] * scale;
+    const c = RAG_CLUSTER_COLOR[d.cluster];
+    const isTop = topIds.has(d.id);
+    if (isTop) {
+      s += `<circle cx="${dx}" cy="${dy}" r="11" fill="none" stroke="${c}" stroke-width="1.5" opacity="0.85"/>`;
+    }
+    s += `<circle cx="${dx}" cy="${dy}" r="${isTop ? 6 : 4}" fill="${c}" stroke="#0a1628" stroke-width="1"/>`;
+    if (isTop) {
+      s += `<text x="${dx + 14}" y="${dy + 4}" font-size="10" fill="${c}" font-family="ui-monospace,monospace" font-weight="700">${d.id} · ${d.sim.toFixed(2)}</text>`;
+    }
+  });
+
+  // Query as a star
+  s += `<polygon points="${ragStarPoints(qx, qy, 11, 5)}" fill="#fff" stroke="${q.color}" stroke-width="2.4"/>`;
+  s += `<text x="${qx + 16}" y="${qy + 4}" font-size="12" fill="#fff" font-family="ui-monospace,monospace" font-weight="800" letter-spacing="2">QUERY</text>`;
+
+  svg.innerHTML = s;
+
+  // Right-side ranked results panel
+  const results = $('#rag-results');
+  if (results) {
+    results.innerHTML = top3.map((d, i) => {
+      const c = RAG_CLUSTER_COLOR[d.cluster];
+      return `
+        <div style="background:rgba(0,212,255,0.04); border:1px solid ${c}; border-left-width:4px; padding:10px 14px; border-radius:0 6px 6px 0;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span style="display:inline-flex; align-items:center; gap:8px;">
+              <span style="display:inline-flex; width:18px; height:18px; border-radius:50%; background:${c}; color:#0a1628; align-items:center; justify-content:center; font-family:var(--fontmono); font-size:10px; font-weight:800;">${i+1}</span>
+              <span style="color:${c}; font-family:var(--fontmono); font-size:11px; font-weight:700; letter-spacing:1.5px;">${d.id}</span>
+            </span>
+            <span style="font-family:var(--fontmono); font-size:11px; color:${c};">cos sim ${d.sim.toFixed(3)}</span>
+          </div>
+          <div style="font-size:13px; color:#fff; line-height:1.45;">${d.chunk}</div>
+        </div>
+      `;
+    }).join('');
+  }
+}
+
+(function setupRAGInteraction() {
+  const tabs = document.getElementById('rag-queries');
+  if (!tabs) return;
+  tabs.addEventListener('click', e => {
+    const btn = e.target.closest('button[data-q]');
+    if (!btn) return;
+    RAG.selected = btn.dataset.q;
+    tabs.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.q === RAG.selected));
+    drawRAG();
+  });
+})();
+drawRAG();
 
 /* YouTube section uses plain anchor links — no JS needed.
    The iframe-embed approach was abandoned because sandboxed preview
