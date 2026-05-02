@@ -506,9 +506,42 @@
   .panel::-webkit-scrollbar, .tab-pane::-webkit-scrollbar, .overview::-webkit-scrollbar { width: 8px; height: 8px; }
   .panel::-webkit-scrollbar-thumb, .tab-pane::-webkit-scrollbar-thumb, .overview::-webkit-scrollbar-thumb { background: var(--vast-line); border-radius: 4px; }
 
-  /* Compact "Why VAST" grid (slide 7, data-slide=6) — 6 cards fit comfortably */
+  /* Compact "Why VAST" grid (slide 9, data-slide=8) — 6 cards fit comfortably */
   section[data-slide="8"] .panel { padding: 14px 18px; }
   section[data-slide="8"] p { line-height: 1.45; }
+
+  /* RAG retrieval (slide 8, data-slide=7) — DB-row view */
+  section[data-slide="7"] .rag-table {
+    font-family: var(--fontmono);
+    font-size: 11px;
+    display: flex; flex-direction: column;
+    border-radius: 4px; overflow: hidden;
+    border: 1px solid var(--vast-line);
+  }
+  section[data-slide="7"] .rag-row {
+    display: grid;
+    grid-template-columns: 78px minmax(0, 1fr) 130px 56px;
+    gap: 12px;
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--vast-line);
+    align-items: center;
+    color: var(--vast-silver);
+  }
+  section[data-slide="7"] .rag-row:last-child { border-bottom: none; }
+  section[data-slide="7"] .rag-row span {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  section[data-slide="7"] .rag-row.rag-head {
+    background: rgba(0,212,255,0.10);
+    color: var(--vast-cyan);
+    text-transform: uppercase; letter-spacing: 1px;
+    font-weight: 700; font-size: 10px;
+  }
+  section[data-slide="7"] .rag-row.rag-hit {
+    background: rgba(255,255,255,0.04);
+    color: #fff;
+    font-weight: 600;
+  }
 
   /* ===== YouTube thumbnail card ===== */
   .yt-thumb {
@@ -1020,7 +1053,13 @@
           <svg id="rag-svg" viewBox="0 0 600 400" preserveAspectRatio="xMidYMid meet" style="flex:1; min-height:0;"></svg>
         </div>
         <div class="panel" style="display:flex; flex-direction:column; gap:10px; min-height:0;">
-          <h3 class="section-h" style="font-size:13px;">Top-3 matches &rarr; context for the LLM</h3>
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+            <h3 class="section-h" style="font-size:13px; margin:0;">Matches &rarr; context for the LLM</h3>
+            <div class="toggles" id="rag-view-toggle">
+              <button data-view="cards" class="on">cards</button>
+              <button data-view="rows">db rows</button>
+            </div>
+          </div>
           <div id="rag-results" style="display:flex; flex-direction:column; gap:10px; flex:1; min-height:0; overflow:auto;"></div>
         </div>
       </div>
@@ -1749,6 +1788,7 @@ drawVec3D();
    ============================================================== */
 const RAG = {
   selected: 'animals',
+  view: 'cards',  // 'cards' | 'rows'
   queries: {
     animals:  { text:'"Tell me about cats"',     vec:[-2.5,  1.7], color:'#00d4ff' },
     vehicles: { text:'"How do trucks work?"',    vec:[ 2.7, -1.4], color:'#5eead4' },
@@ -1852,9 +1892,11 @@ function drawRAG() {
 
   svg.innerHTML = s;
 
-  // Right-side ranked results panel
+  // Right-side ranked results panel — cards OR db rows
   const results = $('#rag-results');
-  if (results) {
+  if (!results) return;
+
+  if (RAG.view === 'cards') {
     results.innerHTML = top3.map((d, i) => {
       const c = RAG_CLUSTER_COLOR[d.cluster];
       return `
@@ -1870,19 +1912,56 @@ function drawRAG() {
         </div>
       `;
     }).join('');
+  } else {
+    // DB-row view: show all 12 docs ranked, top-3 highlighted
+    const headerRow = `
+      <div class="rag-row rag-head">
+        <span>doc_id</span>
+        <span>path</span>
+        <span>vector (768d)</span>
+        <span>cos_sim</span>
+      </div>`;
+    const dataRows = ranked.map(d => {
+      const c = RAG_CLUSTER_COLOR[d.cluster];
+      const isTop = topIds.has(d.id);
+      const path = `/vast/rag/chunks/${d.id}.json`;
+      const vec  = `[${d.vec[0].toFixed(2)}, ${d.vec[1].toFixed(2)}, …]`;
+      const idStyle  = isTop ? `color:${c}; font-weight:800;` : '';
+      const simStyle = isTop ? `color:${c}; font-weight:700;` : '';
+      const borderStyle = isTop ? `border-left:3px solid ${c}; padding-left:9px;` : '';
+      return `
+        <div class="rag-row${isTop ? ' rag-hit' : ''}" style="${borderStyle}">
+          <span style="${idStyle}">${d.id}</span>
+          <span title="${path}">${path}</span>
+          <span>${vec}</span>
+          <span style="${simStyle}">${d.sim.toFixed(3)}</span>
+        </div>`;
+    }).join('');
+    results.innerHTML = `<div class="rag-table">${headerRow}${dataRows}</div>`;
   }
 }
 
 (function setupRAGInteraction() {
   const tabs = document.getElementById('rag-queries');
-  if (!tabs) return;
-  tabs.addEventListener('click', e => {
-    const btn = e.target.closest('button[data-q]');
-    if (!btn) return;
-    RAG.selected = btn.dataset.q;
-    tabs.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.q === RAG.selected));
-    drawRAG();
-  });
+  if (tabs) {
+    tabs.addEventListener('click', e => {
+      const btn = e.target.closest('button[data-q]');
+      if (!btn) return;
+      RAG.selected = btn.dataset.q;
+      tabs.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.q === RAG.selected));
+      drawRAG();
+    });
+  }
+  const viewToggle = document.getElementById('rag-view-toggle');
+  if (viewToggle) {
+    viewToggle.addEventListener('click', e => {
+      const btn = e.target.closest('button[data-view]');
+      if (!btn) return;
+      RAG.view = btn.dataset.view;
+      viewToggle.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.view === RAG.view));
+      drawRAG();
+    });
+  }
 })();
 drawRAG();
 
