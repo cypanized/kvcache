@@ -507,8 +507,8 @@
   .panel::-webkit-scrollbar-thumb, .tab-pane::-webkit-scrollbar-thumb, .overview::-webkit-scrollbar-thumb { background: var(--vast-line); border-radius: 4px; }
 
   /* Compact "Why VAST" grid (slide 7, data-slide=6) — 6 cards fit comfortably */
-  section[data-slide="6"] .panel { padding: 14px 18px; }
-  section[data-slide="6"] p { line-height: 1.45; }
+  section[data-slide="7"] .panel { padding: 14px 18px; }
+  section[data-slide="7"] p { line-height: 1.45; }
 
   /* ===== YouTube thumbnail card ===== */
   .yt-thumb {
@@ -718,7 +718,7 @@
   </div>
   <div class="spacer"></div>
   <div class="progress"><div id="progress-bar"></div></div>
-  <span class="counter" id="counter">1 / 8</span>
+  <span class="counter" id="counter">1 / 9</span>
 </header>
 
 <main class="deck" id="deck">
@@ -961,9 +961,38 @@
   </section>
 
   <!-- ============================================================ -->
-  <!-- SLIDE 7 — Why VAST -->
+  <!-- SLIDE 7 — Vector embeddings -->
   <!-- ============================================================ -->
   <section class="slide" data-slide="6">
+    <div class="slide-head">
+      <div class="accent-bar"></div>
+      <div class="slide-eyebrow">05 &middot; Inference &mdash; vectors</div>
+      <h2 class="slide-title">Vector embeddings &mdash; meaning becomes geometry</h2>
+      <p class="slide-sub">A model maps each chunk of text (or image, or audio) to a high-dimensional vector. Items with similar meaning land in similar regions of the space. Retrieval is a nearest-neighbor search by <strong>cosine similarity</strong>.</p>
+    </div>
+    <div class="slide-body">
+      <div class="grid-2" style="flex:1; min-height:0;">
+        <div class="panel bare" style="display:flex; flex-direction:column; gap:8px; min-height:0;">
+          <h3 class="section-h" style="font-size:13px;">2-dim toy space &middot; clusters by meaning</h3>
+          <svg id="vec2d-svg" viewBox="0 0 600 400" preserveAspectRatio="xMidYMid meet" style="flex:1; min-height:0;"></svg>
+          <p style="margin:0; color:var(--vast-silver); font-size:12px; line-height:1.45;">Each word becomes a 2-dim point. The model learns to place similar meanings near each other &mdash; <em>animals</em> in one corner, <em>vehicles</em> in another, <em>food</em> in a third. In a real model the space is 768 or 1536 dimensions, but the geometry is the same.</p>
+        </div>
+        <div class="panel bare" style="display:flex; flex-direction:column; gap:8px; min-height:0;">
+          <h3 class="section-h" style="font-size:13px;">3-dim space &middot; cosine similarity finds neighbors</h3>
+          <svg id="vec3d-svg" viewBox="0 0 700 460" preserveAspectRatio="xMidYMid meet" style="flex:1; min-height:0;"></svg>
+          <p style="margin:0; color:var(--vast-silver); font-size:12px; line-height:1.45;"><strong>Cosine similarity</strong> = the cosine of the angle between two vectors. <span style="color:#5eead4;">0&middot;9&hairsp;+ &rarr; very similar</span>. <span style="color:#fbbf24;">~0 &rarr; unrelated</span>. <span style="color:#ff6b6b;">negative &rarr; opposing meaning</span>. Magnitude is ignored, so a long vector and a short vector pointing the same way are still similar.</p>
+        </div>
+      </div>
+      <div class="callout" style="flex:0 0 auto;">
+        <strong>Why this lives on storage</strong> &mdash; a production RAG index has <em>billions</em> of vectors. Each query computes similarities against tens of thousands of candidates. The whole pipeline is bottlenecked by random reads at sub-ms latency &mdash; exactly the workload VAST's all-NVMe + RDMA fabric is built for.
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SLIDE 8 — Why VAST -->
+  <!-- ============================================================ -->
+  <section class="slide" data-slide="7">
     <div class="slide-head">
       <div class="accent-bar"></div>
       <div class="slide-eyebrow">06 &middot; Why VAST</div>
@@ -1007,9 +1036,9 @@
   </section>
 
   <!-- ============================================================ -->
-  <!-- SLIDE 8 — Bottom line -->
+  <!-- SLIDE 9 — Bottom line -->
   <!-- ============================================================ -->
-  <section class="slide" data-slide="7">
+  <section class="slide" data-slide="8">
     <div class="slide-head">
       <div class="accent-bar"></div>
       <div class="slide-eyebrow">07 &middot; Bottom line</div>
@@ -1159,14 +1188,15 @@ const prefillMs = (n) => COEF.prefillLin*n + COEF.prefillSq*n*n;
    Slide navigation
    ============================================================== */
 const SLIDE_TITLES = [
-  { num:'',    title:'Title',          desc:'VAST + AI intro' },
-  { num:'01',  title:'The crunch',     desc:'Three different storage profiles' },
-  { num:'02',  title:'Architecture',   desc:'DASE — Disaggregated Shared-Everything' },
-  { num:'03',  title:'Lifecycle',      desc:'Same data across six stages' },
-  { num:'04',  title:'Training',       desc:'Reads + checkpoint storms' },
-  { num:'05',  title:'Inference',      desc:'Weights · KV cache · vectors' },
-  { num:'06',  title:'Why VAST',       desc:'The six attributes' },
-  { num:'07',  title:'Bottom line',    desc:'Takeaways' },
+  { num:'',    title:'Title',              desc:'VAST + AI intro' },
+  { num:'01',  title:'The crunch',         desc:'Three different storage profiles' },
+  { num:'02',  title:'Architecture',       desc:'DASE — Disaggregated Shared-Everything' },
+  { num:'03',  title:'Lifecycle',          desc:'Same data across six stages' },
+  { num:'04',  title:'Training',           desc:'Reads + checkpoint storms' },
+  { num:'05',  title:'Inference',          desc:'Weights · KV cache · vectors' },
+  { num:'05',  title:'Vector embeddings',  desc:'2D / 3D space + cosine similarity' },
+  { num:'06',  title:'Why VAST',           desc:'The six attributes' },
+  { num:'07',  title:'Bottom line',        desc:'Takeaways' },
 ];
 const TOTAL = SLIDE_TITLES.length;
 let cur = 0;
@@ -1375,6 +1405,157 @@ function drawLifecycle() {
   svg.innerHTML = s;
 }
 drawLifecycle();
+
+/* ==============================================================
+   Vector embeddings — 2D scatter + 3D vectors with cosine similarity
+   ============================================================== */
+function drawVec2D() {
+  const svg = $('#vec2d-svg');
+  if (!svg) return;
+  const W = 600, H = 400;
+  const cx = W/2, cy = H/2;
+  const scale = 50;  // pixels per unit
+
+  const points = [
+    { label:'cat',     x:-2.5, y: 1.5,  color:'#00d4ff' },
+    { label:'dog',     x:-3.0, y: 1.0,  color:'#00d4ff' },
+    { label:'puppy',   x:-2.0, y: 2.0,  color:'#00d4ff' },
+    { label:'kitten',  x:-2.8, y: 1.8,  color:'#00d4ff' },
+    { label:'car',     x: 2.5, y:-1.5,  color:'#5eead4' },
+    { label:'truck',   x: 3.0, y:-1.0,  color:'#5eead4' },
+    { label:'sedan',   x: 2.8, y:-1.8,  color:'#5eead4' },
+    { label:'apple',   x: 0.3, y: 2.6,  color:'#fbbf24' },
+    { label:'banana',  x: 0.7, y: 2.9,  color:'#fbbf24' },
+    { label:'bread',   x: 0.0, y: 2.3,  color:'#fbbf24' },
+  ];
+
+  let s = '';
+
+  // Subtle grid
+  for (let i = -3; i <= 3; i++) {
+    s += `<line x1="${cx + i*scale}" y1="20" x2="${cx + i*scale}" y2="${H-20}" stroke="#162a4a" stroke-width="0.5"/>`;
+    s += `<line x1="20" y1="${cy + i*scale}" x2="${W-20}" y2="${cy + i*scale}" stroke="#162a4a" stroke-width="0.5"/>`;
+  }
+  // Axes
+  s += `<line x1="20" y1="${cy}" x2="${W-20}" y2="${cy}" stroke="#234670" stroke-width="1.2"/>`;
+  s += `<line x1="${cx}" y1="20" x2="${cx}" y2="${H-20}" stroke="#234670" stroke-width="1.2"/>`;
+  s += `<text x="${W-26}" y="${cy-8}" text-anchor="end" font-size="10" fill="#7a8da3" font-family="ui-monospace,monospace">embed dim 1 →</text>`;
+  s += `<text x="${cx+10}" y="28" font-size="10" fill="#7a8da3" font-family="ui-monospace,monospace">embed dim 2 ↑</text>`;
+
+  // Cluster ellipses (background) — animals / vehicles / food
+  s += `<ellipse cx="${cx + -2.6*scale}" cy="${cy - 1.6*scale}" rx="80" ry="55" fill="rgba(0,212,255,0.10)" stroke="#00d4ff" stroke-width="1" stroke-dasharray="4 3"/>`;
+  s += `<ellipse cx="${cx +  2.77*scale}" cy="${cy - -1.43*scale}" rx="78" ry="55" fill="rgba(94,234,212,0.10)" stroke="#5eead4" stroke-width="1" stroke-dasharray="4 3"/>`;
+  s += `<ellipse cx="${cx +  0.33*scale}" cy="${cy - 2.6*scale}" rx="55" ry="42" fill="rgba(251,191,36,0.10)" stroke="#fbbf24" stroke-width="1" stroke-dasharray="4 3"/>`;
+
+  // Cluster labels
+  s += `<text x="${cx + -2.6*scale}" y="${cy - 1.6*scale - 64}" text-anchor="middle" font-size="11" fill="#00d4ff" font-family="ui-monospace,monospace" font-weight="700" letter-spacing="2">ANIMALS</text>`;
+  s += `<text x="${cx +  2.77*scale}" y="${cy - -1.43*scale + 78}" text-anchor="middle" font-size="11" fill="#5eead4" font-family="ui-monospace,monospace" font-weight="700" letter-spacing="2">VEHICLES</text>`;
+  s += `<text x="${cx +  0.33*scale}" y="${cy - 2.6*scale - 50}" text-anchor="middle" font-size="11" fill="#fbbf24" font-family="ui-monospace,monospace" font-weight="700" letter-spacing="2">FOOD</text>`;
+
+  // Points + labels
+  points.forEach(p => {
+    const px = cx + p.x * scale;
+    const py = cy - p.y * scale;
+    s += `<circle cx="${px}" cy="${py}" r="5" fill="${p.color}" stroke="#0a1628" stroke-width="1.2"/>`;
+    s += `<text x="${px+10}" y="${py+4}" font-size="11" fill="#fff" font-family="ui-monospace,monospace" font-weight="600">${p.label}</text>`;
+  });
+
+  svg.innerHTML = s;
+}
+
+function drawVec3D() {
+  const svg = $('#vec3d-svg');
+  if (!svg) return;
+  const W = 700, H = 460;
+  const cx = W/2 + 30, cy = H/2 + 20;
+  const scale = 56;
+  const cos30 = Math.sqrt(3) / 2;
+  const sin30 = 0.5;
+  function project(x, y, z) {
+    const sx = cx + (x - z) * cos30 * scale;
+    const sy = cy - y * scale + (x + z) * sin30 * scale * 0.5;
+    return [sx, sy];
+  }
+
+  const vectors = [
+    { label:'cat',    v:[-2.0,  1.5, -1.8], cluster:'A', color:'#00d4ff' },
+    { label:'dog',    v:[-2.2,  1.2, -1.6], cluster:'A', color:'#00d4ff' },
+    { label:'puppy',  v:[-1.7,  1.7, -2.0], cluster:'A', color:'#00d4ff' },
+    { label:'car',    v:[ 2.0,  1.0,  1.5], cluster:'B', color:'#5eead4' },
+    { label:'truck',  v:[ 2.3,  0.8,  1.3], cluster:'B', color:'#5eead4' },
+    { label:'sedan',  v:[ 2.1,  1.2,  1.6], cluster:'B', color:'#5eead4' },
+    { label:'apple',  v:[ 0.5, -1.8,  0.7], cluster:'C', color:'#fbbf24' },
+    { label:'banana', v:[ 0.6, -1.6,  0.5], cluster:'C', color:'#fbbf24' },
+  ];
+
+  function cosineSim(a, b) {
+    const dot = a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+    const magA = Math.sqrt(a[0]**2 + a[1]**2 + a[2]**2);
+    const magB = Math.sqrt(b[0]**2 + b[1]**2 + b[2]**2);
+    return dot / (magA * magB);
+  }
+
+  let s = '';
+
+  // Floor grid (z, x plane at y=0)
+  for (let i = -3; i <= 3; i++) {
+    const [a1, b1] = project(i, 0, -3);
+    const [a2, b2] = project(i, 0,  3);
+    s += `<line x1="${a1}" y1="${b1}" x2="${a2}" y2="${b2}" stroke="#162a4a" stroke-width="0.5"/>`;
+    const [c1, d1] = project(-3, 0, i);
+    const [c2, d2] = project( 3, 0, i);
+    s += `<line x1="${c1}" y1="${d1}" x2="${c2}" y2="${d2}" stroke="#162a4a" stroke-width="0.5"/>`;
+  }
+
+  // Axes
+  const [ox, oy] = project(0, 0, 0);
+  const [xax, xay] = project(3, 0, 0);
+  const [yax, yay] = project(0, 3, 0);
+  const [zax, zay] = project(0, 0, 3);
+  s += `<line x1="${ox}" y1="${oy}" x2="${xax}" y2="${xay}" stroke="#7a8da3" stroke-width="1.2"/>`;
+  s += `<line x1="${ox}" y1="${oy}" x2="${yax}" y2="${yay}" stroke="#7a8da3" stroke-width="1.2"/>`;
+  s += `<line x1="${ox}" y1="${oy}" x2="${zax}" y2="${zay}" stroke="#7a8da3" stroke-width="1.2"/>`;
+  s += `<text x="${xax+8}" y="${xay+5}" font-size="11" fill="#7a8da3" font-family="ui-monospace,monospace">x</text>`;
+  s += `<text x="${yax-12}" y="${yay-2}" font-size="11" fill="#7a8da3" font-family="ui-monospace,monospace">y</text>`;
+  s += `<text x="${zax-14}" y="${zay+5}" font-size="11" fill="#7a8da3" font-family="ui-monospace,monospace">z</text>`;
+
+  // Vectors as arrows from origin (sort by depth so back vectors render first)
+  const sorted = vectors
+    .map((vec, i) => ({ vec, i, depth: vec.v[0] + vec.v[2] }))
+    .sort((a, b) => a.depth - b.depth);
+
+  sorted.forEach(({ vec }) => {
+    const [px, py] = project(vec.v[0], vec.v[1], vec.v[2]);
+    s += `<line x1="${ox}" y1="${oy}" x2="${px}" y2="${py}" stroke="${vec.color}" stroke-width="1.6" opacity="0.75"/>`;
+    s += `<circle cx="${px}" cy="${py}" r="4.5" fill="${vec.color}" stroke="#0a1628" stroke-width="1"/>`;
+    s += `<text x="${px+8}" y="${py+4}" font-size="11" fill="#fff" font-family="ui-monospace,monospace" font-weight="600">${vec.label}</text>`;
+  });
+
+  // Highlight a similar pair (cat ↔ dog) and a dissimilar pair (cat ↔ car)
+  const cat = vectors[0].v;
+  const dog = vectors[1].v;
+  const car = vectors[3].v;
+  const simCatDog = cosineSim(cat, dog);
+  const simCatCar = cosineSim(cat, car);
+
+  // Connecting arcs to show angle
+  const [catX, catY] = project(...cat);
+  const [dogX, dogY] = project(...dog);
+  const [carX, carY] = project(...car);
+  s += `<path d="M ${catX} ${catY} L ${ox} ${oy} L ${dogX} ${dogY}" stroke="#5eead4" stroke-width="1.2" fill="none" stroke-dasharray="3 3" opacity="0.7"/>`;
+  s += `<path d="M ${catX} ${catY} L ${ox} ${oy} L ${carX} ${carY}" stroke="#ff6b6b" stroke-width="1.2" fill="none" stroke-dasharray="3 3" opacity="0.55"/>`;
+
+  // Cosine similarity panel (top-left)
+  s += `<rect x="14" y="14" width="220" height="92" rx="6" fill="rgba(10,22,40,0.85)" stroke="#234670" stroke-width="1"/>`;
+  s += `<text x="26" y="36" font-size="11" fill="var(--vast-cyan)" font-family="ui-monospace,monospace" font-weight="700" letter-spacing="2">COSINE SIMILARITY</text>`;
+  s += `<text x="26" y="60" font-size="13" fill="#5eead4" font-family="ui-monospace,monospace" font-weight="700">cat &harr; dog &nbsp; ${simCatDog.toFixed(2)}</text>`;
+  s += `<text x="26" y="80" font-size="11" fill="#7a8da3" font-family="ui-monospace,monospace">small angle &rarr; same cluster</text>`;
+  s += `<text x="26" y="98" font-size="13" fill="#ff6b6b" font-family="ui-monospace,monospace" font-weight="700">cat &harr; car &nbsp; ${simCatCar.toFixed(2)}</text>`;
+
+  svg.innerHTML = s;
+}
+drawVec2D();
+drawVec3D();
 
 /* YouTube section uses plain anchor links — no JS needed.
    The iframe-embed approach was abandoned because sandboxed preview
