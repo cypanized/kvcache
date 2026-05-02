@@ -1,0 +1,1385 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VAST + AI — one platform for the AI data lifecycle</title>
+<style>
+  :root {
+    --vast-deep-blue: #0a1628;
+    --vast-navy: #162a4a;
+    --vast-navy-2: #1c3358;
+    --vast-cyan: #00d4ff;
+    --vast-teal: #00a3cc;
+    --vast-white: #ffffff;
+    --vast-silver: #b8c5d4;
+    --vast-line: #234670;
+    --vast-warn: #ffb547;
+    --vast-bad:  #ff6b6b;
+    --vast-good: #5eead4;
+    --fontmono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --font: "Aptos Display", "Segoe UI", -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+    --fonth: "Aptos Display", "Arial Black", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    background: var(--vast-deep-blue);
+    color: var(--vast-white);
+    font-family: var(--font);
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 { font-family: var(--fonth); font-weight: 800; color: var(--vast-white); margin: 0; }
+  code, .mono { font-family: var(--fontmono); }
+  ::selection { background: rgba(0,212,255,.35); color: white; }
+
+  /* ============================================================
+     SCALING SYSTEM
+     We design everything at a fixed 1600×900 canvas, then scale
+     to fit any viewport. All sizes below are "design pixels".
+     ============================================================ */
+  .stage {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+    background: var(--vast-deep-blue);
+  }
+  .canvas {
+    width: 1600px;
+    height: 900px;
+    position: relative;
+    transform-origin: center center;
+    flex-shrink: 0;
+  }
+
+  /* ===== Top bar ===== */
+  .topbar {
+    position: absolute; top: 0; left: 0; right: 0; height: 60px;
+    background: rgba(10,22,40,.96);
+    border-bottom: 2px solid var(--vast-cyan);
+    display: flex; align-items: center; gap: 18px;
+    padding: 0 32px;
+  }
+  .topbar img { height: 30px; }
+  .topbar .vast-logo { height: 36px; width: auto; display: block; }
+  .topbar .crumb {
+    color: var(--vast-silver); font-family: var(--fontmono); font-size: 14px;
+    border-left: 1px solid var(--vast-line); padding-left: 18px;
+    text-transform: uppercase; letter-spacing: .14em;
+  }
+  .topbar .spacer { flex: 1; }
+  .topbar .counter {
+    font-family: var(--fontmono); color: var(--vast-cyan);
+    font-size: 15px; letter-spacing: .12em; font-weight: 600;
+  }
+  .topbar .progress {
+    height: 4px; background: var(--vast-line); border-radius: 2px;
+    width: 280px; overflow: hidden;
+  }
+  .topbar .progress > div {
+    height: 100%; background: linear-gradient(90deg, var(--vast-cyan), var(--vast-teal));
+    width: 0%; transition: width .3s ease;
+  }
+
+  /* ===== Bottom nav ===== */
+  .navbar {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 60px;
+    background: rgba(10,22,40,.96);
+    border-top: 1px solid var(--vast-line);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 32px;
+  }
+  .navbar .nav-btns { display: flex; gap: 10px; align-items: center; }
+  .navbar button {
+    background: transparent; border: 1px solid var(--vast-line);
+    color: var(--vast-silver); border-radius: 4px;
+    width: 38px; height: 38px; cursor: pointer; font-family: var(--fontmono);
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: all .15s ease; font-size: 16px;
+  }
+  .navbar button:hover { color: var(--vast-cyan); border-color: var(--vast-cyan); }
+  .dots { display: flex; gap: 10px; }
+  .dots .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--vast-line); cursor: pointer; transition: all .15s ease;
+  }
+  .dots .dot.on { background: var(--vast-cyan); box-shadow: 0 0 10px rgba(0,212,255,.6); transform: scale(1.2); }
+  .dots .dot:hover { background: var(--vast-teal); }
+  .hint { color: var(--vast-silver); font-family: var(--fontmono); font-size: 13px; }
+  .hint kbd {
+    font-family: var(--fontmono); font-size: 12px; padding: 2px 7px;
+    border: 1px solid var(--vast-line); border-bottom-width: 2px; border-radius: 3px;
+    background: var(--vast-navy); color: var(--vast-white); margin: 0 3px;
+  }
+
+  /* ===== Deck (slide area between topbar and navbar) ===== */
+  .deck {
+    position: absolute;
+    top: 60px; bottom: 60px;
+    left: 0; right: 0;
+    overflow: hidden;
+  }
+  .slide {
+    position: absolute; inset: 0;
+    padding: 36px 60px 32px;
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+    animation: slideIn .35s ease;
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(20px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  .slide.on { display: flex; }
+
+  .slide-head { margin-bottom: 20px; flex-shrink: 0; }
+  .slide-eyebrow {
+    font-family: var(--fontmono); font-size: 14px; letter-spacing: .2em;
+    color: var(--vast-cyan); text-transform: uppercase; font-weight: 600;
+  }
+  .slide-title {
+    font-size: 38px; margin-top: 6px; letter-spacing: -.01em; line-height: 1.15;
+  }
+  .slide-sub {
+    color: var(--vast-silver); font-size: 18px;
+    margin-top: 8px; max-width: 110ch;
+  }
+  .accent-bar {
+    width: 60px; height: 4px;
+    background: linear-gradient(90deg, var(--vast-cyan), var(--vast-teal));
+    margin-bottom: 14px;
+  }
+
+  .slide-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 18px; }
+  .grid-2     { display: grid; grid-template-columns: 1fr 1fr;  gap: 22px; flex: 1; min-height: 0; }
+  .grid-3-1   { display: grid; grid-template-columns: 3fr 2fr;  gap: 22px; flex: 1; min-height: 0; }
+  .grid-1-3   { display: grid; grid-template-columns: 2fr 3fr;  gap: 22px; flex: 1; min-height: 0; }
+  .stack { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+
+  .panel {
+    background: var(--vast-navy);
+    border: 1px solid var(--vast-line);
+    border-left: 4px solid var(--vast-cyan);
+    border-radius: 8px;
+    padding: 22px 26px;
+    overflow: auto;
+    min-height: 0;
+  }
+  .panel.bare { padding: 0; background: transparent; border: none; overflow: visible; }
+  .panel.dark {
+    background: var(--vast-deep-blue);
+    border-left-color: var(--vast-line);
+  }
+
+  /* ===== Title slide ===== */
+  .title-slide {
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 0 100px;
+  }
+  .title-slide .accent-bar { margin: 0 auto 28px; }
+  .title-slide h1 {
+    font-size: 84px; line-height: 1.05; letter-spacing: -.02em; margin-bottom: 28px;
+  }
+  .title-slide h1 .highlight {
+    background: linear-gradient(90deg, var(--vast-cyan), var(--vast-teal));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .title-slide .lede { color: var(--vast-silver); font-size: 24px; max-width: 80ch; margin: 0 auto; line-height: 1.5; }
+  .title-slide .start { margin-top: 44px; color: var(--vast-cyan); font-family: var(--fontmono); font-size: 16px; }
+  .title-slide .start kbd {
+    font-family: var(--fontmono); font-size: 14px; padding: 4px 12px;
+    border: 1px solid var(--vast-cyan); border-radius: 4px;
+    background: rgba(0,212,255,.08); margin: 0 5px;
+  }
+  .title-slide .byline {
+    margin-top: 32px;
+    font-family: var(--fontmono);
+    font-size: 16px;
+    color: var(--vast-silver);
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .title-slide .byline .byline-name {
+    color: var(--vast-cyan);
+    font-weight: 700;
+    letter-spacing: .14em;
+  }
+
+  /* Per-slide footer note — subtle attribution shown on every slide */
+  .slide:not(.title-slide)::after {
+    content: "Wong Tran · VAST + AI explainer";
+    position: absolute;
+    right: 60px;
+    bottom: 12px;
+    font-family: var(--fontmono);
+    font-size: 11px;
+    color: var(--vast-cyan);
+    opacity: 0.7;
+    letter-spacing: .1em;
+    pointer-events: none;
+  }
+
+  /* ===== Definition cards ===== */
+  .def {
+    background: var(--vast-deep-blue);
+    border: 1px solid var(--vast-line);
+    border-radius: 8px;
+    padding: 24px 28px;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .def.prefill { border-top: 4px solid var(--vast-cyan); }
+  .def.decode  { border-top: 4px solid var(--vast-good); }
+  .def .tag {
+    display: inline-block; padding: 4px 12px; border-radius: 4px;
+    font-family: var(--fontmono); font-size: 12px; letter-spacing: .14em;
+    text-transform: uppercase; margin-bottom: 12px; align-self: flex-start; font-weight: 600;
+  }
+  .def.prefill .tag { background: rgba(0,212,255,.16); color: var(--vast-cyan); border: 1px solid var(--vast-cyan); }
+  .def.decode .tag  { background: rgba(94,234,212,.14); color: var(--vast-good); border: 1px solid var(--vast-good); }
+  .def h3 { color: var(--vast-white); font-size: 28px; margin: 0; letter-spacing: -.01em; }
+  .def .what { color: var(--vast-silver); margin: 10px 0 16px; font-size: 16px; line-height: 1.45; }
+  .def dl { margin: 0; display: grid; grid-template-columns: 100px 1fr; gap: 9px 18px; font-size: 15px; }
+  .def dt { color: var(--vast-cyan); font-family: var(--fontmono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; align-self: start; padding-top: 3px; font-weight: 600; }
+  .def dd { margin: 0; color: var(--vast-white); }
+
+  /* ===== Controls / pills / buttons ===== */
+  .controls { display: flex; flex-wrap: wrap; gap: 16px 26px; align-items: end; }
+  .control { display: flex; flex-direction: column; gap: 6px; min-width: 180px; flex: 1; }
+  .control label {
+    font-size: 12px; color: var(--vast-silver);
+    font-family: var(--fontmono); letter-spacing: .1em; text-transform: uppercase; font-weight: 600;
+  }
+  input[type="range"] {
+    width: 100%;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background: transparent;
+    height: 22px;
+    margin: 0; padding: 0;
+    cursor: pointer;
+  }
+  input[type="range"]:focus { outline: none; }
+
+  /* WebKit / Chrome / Safari */
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 8px;
+    box-sizing: border-box;
+    background: var(--vast-deep-blue);
+    border: 1px solid var(--vast-line);
+    border-radius: 4px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    margin-top: -5px;
+    background: var(--vast-cyan);
+    border: 2px solid var(--vast-deep-blue);
+    border-radius: 50%;
+    box-shadow: 0 0 8px rgba(0, 212, 255, 0.5);
+    cursor: pointer;
+    transition: transform .12s ease, box-shadow .12s ease;
+  }
+  input[type="range"]:hover::-webkit-slider-thumb,
+  input[type="range"]:focus::-webkit-slider-thumb {
+    transform: scale(1.12);
+    box-shadow: 0 0 14px rgba(0, 212, 255, 0.85);
+  }
+
+  /* Firefox */
+  input[type="range"]::-moz-range-track {
+    height: 8px;
+    box-sizing: border-box;
+    background: var(--vast-deep-blue);
+    border: 1px solid var(--vast-line);
+    border-radius: 4px;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background: var(--vast-cyan);
+    border: 2px solid var(--vast-deep-blue);
+    border-radius: 50%;
+    box-shadow: 0 0 8px rgba(0, 212, 255, 0.5);
+    cursor: pointer;
+    transition: transform .12s ease, box-shadow .12s ease;
+  }
+  input[type="range"]:hover::-moz-range-thumb,
+  input[type="range"]:focus::-moz-range-thumb {
+    transform: scale(1.12);
+    box-shadow: 0 0 14px rgba(0, 212, 255, 0.85);
+  }
+  .pill {
+    display: inline-block;
+    font-family: var(--fontmono);
+    font-size: 13px; padding: 4px 11px; border-radius: 4px;
+    background: var(--vast-deep-blue); color: var(--vast-cyan);
+    border: 1px solid var(--vast-cyan); font-weight: 600;
+  }
+  .btn {
+    background: var(--vast-cyan); color: var(--vast-deep-blue);
+    font-weight: 700; padding: 10px 20px; border: none; border-radius: 4px;
+    cursor: pointer; font-family: var(--font);
+    transition: all .15s ease; font-size: 15px;
+  }
+  .btn:hover { background: var(--vast-teal); box-shadow: 0 0 16px rgba(0,212,255,.4); }
+  .btn-ghost {
+    background: transparent; color: var(--vast-cyan);
+    border: 1px solid var(--vast-cyan); padding: 9px 18px;
+    border-radius: 4px; cursor: pointer; font-family: var(--font); font-weight: 600;
+    transition: all .15s ease; font-size: 14px;
+  }
+  .btn-ghost:hover { background: rgba(0,212,255,.1); }
+
+  .toggles { display: inline-flex; background: var(--vast-deep-blue); border: 1px solid var(--vast-line); border-radius: 4px; overflow: hidden; flex-wrap: wrap; }
+  .toggles button {
+    background: transparent; color: var(--vast-silver); border: none;
+    padding: 9px 16px; font-family: var(--fontmono); font-size: 13px; cursor: pointer;
+    border-right: 1px solid var(--vast-line); font-weight: 600;
+  }
+  .toggles button:last-child { border-right: none; }
+  .toggles button.on { background: var(--vast-cyan); color: var(--vast-deep-blue); }
+
+  /* ===== Stat boxes ===== */
+  .stat-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 12px;
+  }
+  .stat-grid .box {
+    background: var(--vast-deep-blue); border: 1px solid var(--vast-line);
+    border-radius: 6px; padding: 12px 14px;
+  }
+  .stat-grid .v {
+    font-family: var(--fontmono); font-size: 22px; color: var(--vast-cyan);
+    font-weight: 700;
+  }
+  .stat-grid .k {
+    font-size: 11px; color: var(--vast-silver);
+    text-transform: uppercase; letter-spacing: .12em; margin-bottom: 4px; font-weight: 600;
+  }
+
+  /* ===== SVG ===== */
+  svg { display: block; max-width: 100%; height: auto; }
+
+  /* ===== Callout ===== */
+  .callout {
+    border-left: 4px solid var(--vast-cyan);
+    background: rgba(0,212,255,.08);
+    padding: 14px 18px; border-radius: 0 6px 6px 0;
+    color: var(--vast-white); font-size: 15px; line-height: 1.5;
+  }
+  .callout.warn { border-color: var(--vast-warn); background: rgba(255,181,71,.08); }
+  .callout.bad  { border-color: var(--vast-bad);  background: rgba(255,107,107,.08); }
+
+  /* ===== Token / prompt visualization ===== */
+  textarea {
+    width: 100%; background: var(--vast-deep-blue); color: var(--vast-white);
+    border: 1px solid var(--vast-line); border-radius: 4px; padding: 12px 14px;
+    font-family: var(--fontmono); font-size: 14px; resize: none; line-height: 1.5;
+  }
+  textarea:focus { outline: 2px solid var(--vast-cyan); outline-offset: -1px; border-color: var(--vast-cyan); }
+
+  .prompts { display: grid; gap: 8px; }
+  .prompt-row {
+    display: flex; align-items: stretch;
+    border: 1px solid var(--vast-line); border-radius: 4px; overflow: hidden;
+    background: var(--vast-deep-blue); font-family: var(--fontmono); font-size: 13px;
+  }
+  .prompt-row .label {
+    background: var(--vast-navy-2); color: var(--vast-silver);
+    padding: 8px 12px; border-right: 1px solid var(--vast-line);
+    min-width: 88px; text-align: center;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; letter-spacing: .1em; font-size: 12px;
+  }
+  .prompt-row.input .label { background: rgba(0,212,255,.15); color: var(--vast-cyan); }
+  .prompt-row .toks { display: flex; flex-wrap: wrap; padding: 8px 10px; gap: 4px; flex: 1; }
+  .tok {
+    padding: 3px 8px; border-radius: 3px; background: var(--vast-navy-2); color: var(--vast-white);
+    border: 1px solid var(--vast-line); font-size: 13px;
+  }
+  .tok.hit { background: rgba(0,212,255,.18); border-color: var(--vast-cyan); color: var(--vast-cyan); }
+
+  /* ===== Buffer / device list ===== */
+  .buffer-vis { background: var(--vast-deep-blue); border: 1px solid var(--vast-line); border-radius: 6px; padding: 16px 20px; }
+  .device-row {
+    display: grid; grid-template-columns: 130px 1fr;
+    gap: 14px; align-items: center; padding: 8px 0;
+    border-bottom: 1px dashed var(--vast-line);
+  }
+  .device-row:last-child { border-bottom: none; }
+  .device-row .name {
+    font-family: var(--fontmono); font-size: 13px;
+    color: var(--vast-silver); text-transform: uppercase; letter-spacing: .08em; font-weight: 600;
+  }
+  .chunks { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+  .chunk {
+    height: 18px; border-radius: 3px;
+    border: 1px solid rgba(255,255,255,.1);
+    transition: all .15s ease;
+  }
+  .chunk:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0,212,255,.4); }
+  .device-gpu { background: linear-gradient(135deg, #00d4ff, #00a3cc); }
+  .device-cpu { background: linear-gradient(135deg, #5eead4, #14b8a6); }
+  .device-ssd { background: linear-gradient(135deg, #ffb547, #f97316); }
+  .device-obj { background: linear-gradient(135deg, #c084fc, #8b5cf6); }
+  .device-net { background: linear-gradient(135deg, #ff6b9d, #ec4899); }
+
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; color: var(--vast-silver); align-items: center; }
+  .legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -1px; margin-right: 6px; }
+
+  /* ===== Tabs ===== */
+  .tabs { display: flex; gap: 8px; flex-wrap: wrap; flex-shrink: 0; padding-bottom: 4px; justify-content: center; }
+  .tab {
+    background: var(--vast-deep-blue); color: var(--vast-silver);
+    border: 1px solid var(--vast-line); border-radius: 4px;
+    padding: 9px 18px; font-family: var(--fontmono); font-size: 13px;
+    cursor: pointer; text-transform: uppercase; letter-spacing: .1em; font-weight: 600;
+    transition: all .15s ease;
+  }
+  .tab:hover { color: var(--vast-cyan); border-color: var(--vast-cyan); background: rgba(0,212,255,0.08); }
+  .tab.on {
+    color: var(--vast-deep-blue); background: var(--vast-cyan); border-color: var(--vast-cyan);
+    box-shadow: 0 0 14px rgba(0,212,255,0.35);
+  }
+  .tab.on:hover { color: var(--vast-deep-blue); background: var(--vast-cyan); }
+  .tab-pane { display: none; padding-top: 16px; flex: 1; min-height: 0; overflow: auto; }
+  .tab-pane.on { display: flex; flex-direction: column; gap: 14px; }
+
+  /* ===== Lists ===== */
+  ul.checklist { list-style: none; padding: 0; margin: 0; }
+  ul.checklist li {
+    padding: 10px 0 10px 28px; position: relative;
+    border-bottom: 1px solid var(--vast-line); font-size: 16px; line-height: 1.5;
+  }
+  ul.checklist li:last-child { border-bottom: none; }
+  ul.checklist li::before {
+    content: "▸"; color: var(--vast-cyan); position: absolute; left: 6px; top: 10px;
+    font-family: var(--fontmono); font-size: 16px;
+  }
+
+  pre {
+    margin: 0; background: var(--vast-deep-blue); padding: 16px; border-radius: 4px;
+    border: 1px solid var(--vast-line); color: var(--vast-silver);
+    font-size: 13px; overflow: auto; line-height: 1.5;
+  }
+  pre .k { color: var(--vast-cyan); }
+
+  /* ===== Overview mode ===== */
+  .overview {
+    position: absolute; inset: 0; background: rgba(10,22,40,.97);
+    z-index: 200; display: none; padding: 80px;
+    overflow: auto;
+  }
+  .overview.on { display: block; }
+  .overview h2 { font-size: 24px; margin-bottom: 24px; color: var(--vast-cyan); }
+  .overview-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+  }
+  .overview-card {
+    background: var(--vast-navy); border: 1px solid var(--vast-line);
+    border-radius: 8px; padding: 20px; cursor: pointer;
+    transition: all .15s ease; aspect-ratio: 16/9;
+    display: flex; flex-direction: column; justify-content: space-between;
+  }
+  .overview-card:hover { border-color: var(--vast-cyan); box-shadow: 0 0 20px rgba(0,212,255,.3); }
+  .overview-card .num { font-family: var(--fontmono); font-size: 13px; color: var(--vast-cyan); font-weight: 600; }
+  .overview-card .title { font-family: var(--fonth); font-size: 20px; line-height: 1.2; }
+  .overview-card .desc { font-size: 13px; color: var(--vast-silver); }
+
+  /* Section dividers within slides */
+  h3.section-h {
+    color: var(--vast-cyan); font-size: 13px; margin: 0 0 8px;
+    text-transform: uppercase; letter-spacing: .12em;
+    font-family: var(--fontmono); font-weight: 600;
+  }
+
+  /* Hide scrollbars (but keep scrollable) */
+  .panel::-webkit-scrollbar, .tab-pane::-webkit-scrollbar, .overview::-webkit-scrollbar { width: 8px; height: 8px; }
+  .panel::-webkit-scrollbar-thumb, .tab-pane::-webkit-scrollbar-thumb, .overview::-webkit-scrollbar-thumb { background: var(--vast-line); border-radius: 4px; }
+
+  /* Compact "Why VAST" grid (slide 7, data-slide=6) — 6 cards fit comfortably */
+  section[data-slide="6"] .panel { padding: 14px 18px; }
+  section[data-slide="6"] p { line-height: 1.45; }
+
+  /* ===== YouTube thumbnail card ===== */
+  .yt-thumb {
+    position: relative;
+    display: block;
+    width: 100%;
+    padding-top: 56.25%;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--vast-line);
+    background: #000;
+    cursor: pointer;
+    transition: border-color .15s ease, box-shadow .15s ease;
+    text-decoration: none;
+  }
+  .yt-thumb:hover {
+    border-color: var(--vast-cyan);
+    box-shadow: 0 0 32px rgba(0,212,255,.35);
+  }
+  .yt-thumb img {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    opacity: 0.92;
+    transition: opacity .15s ease;
+  }
+  .yt-thumb:hover img { opacity: 1; }
+  .yt-thumb .yt-play {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 80px; height: 56px;
+    background: rgba(0, 0, 0, 0.78);
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all .18s ease;
+  }
+  .yt-thumb:hover .yt-play {
+    background: var(--vast-cyan);
+    border-color: var(--vast-cyan);
+    box-shadow: 0 0 28px rgba(0,212,255,.7);
+    transform: translate(-50%, -50%) scale(1.08);
+  }
+  .yt-thumb .yt-play::after {
+    content: "";
+    width: 0; height: 0;
+    border-style: solid;
+    border-width: 12px 0 12px 20px;
+    border-color: transparent transparent transparent #fff;
+    margin-left: 4px;
+    transition: border-color .18s ease;
+  }
+  .yt-thumb:hover .yt-play::after {
+    border-color: transparent transparent transparent var(--vast-deep-blue);
+  }
+  .yt-thumb .yt-badge {
+    position: absolute;
+    bottom: 12px; right: 12px;
+    background: rgba(10, 22, 40, 0.85);
+    color: var(--vast-cyan);
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-family: var(--fontmono);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    border: 1px solid rgba(0, 212, 255, 0.4);
+  }
+  .yt-thumb .yt-meta {
+    position: absolute;
+    bottom: 12px; left: 12px; right: 80px;
+    background: rgba(10, 22, 40, 0.85);
+    color: var(--vast-white);
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-family: var(--font);
+    font-size: 12px;
+    border: 1px solid var(--vast-line);
+  }
+
+  /* ===== Mode toggle (in topbar) ===== */
+  .mode-toggle {
+    display: inline-flex;
+    background: var(--vast-deep-blue);
+    border: 1px solid var(--vast-line);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .mode-toggle button {
+    background: transparent;
+    color: var(--vast-silver);
+    border: none;
+    padding: 7px 14px;
+    font-family: var(--fontmono);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-right: 1px solid var(--vast-line);
+    transition: all .15s ease;
+  }
+  .mode-toggle button:last-child { border-right: none; }
+  .mode-toggle button:hover { color: var(--vast-cyan); }
+  .mode-toggle button.on {
+    background: var(--vast-cyan);
+    color: var(--vast-deep-blue);
+  }
+
+  /* ============================================================
+     SCROLL MODE — same horizontal slide layouts as present mode,
+     just stacked vertically. Each slide stays at the 1600×900
+     design canvas and is scaled per-frame.
+     ============================================================ */
+
+  /* .slide-frame wraps every slide (created at runtime).
+     In present mode it's invisible to layout; in scroll mode it
+     becomes a 16:9 box that contains one scaled slide. */
+  .slide-frame { display: contents; }
+
+  html.mode-scroll, html.mode-scroll body {
+    overflow: auto !important;
+    height: auto !important;
+  }
+  html.mode-scroll body { background: var(--vast-deep-blue); }
+
+  html.mode-scroll .stage {
+    position: static;
+    display: block;
+    overflow: visible;
+    width: 100%;
+    height: auto;
+    align-items: initial;
+    justify-content: initial;
+  }
+  html.mode-scroll .canvas {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    height: auto;
+    transform: none !important;
+    position: static;
+  }
+  html.mode-scroll .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  html.mode-scroll .navbar { display: none; }
+  html.mode-scroll .deck {
+    position: static;
+    top: auto; bottom: auto;
+    overflow: visible;
+  }
+
+  /* Each slide-frame becomes the layout container for one scaled slide */
+  html.mode-scroll .slide-frame {
+    display: block;
+    position: relative;
+    width: 100%;
+    max-width: 1600px;
+    margin: 0 auto;
+    aspect-ratio: 1600 / 900;
+    overflow: hidden;
+    border-bottom: 1px solid var(--vast-line);
+  }
+  html.mode-scroll .slide-frame:last-child { border-bottom: none; }
+
+  /* Each slide stays at design size; transform is applied per-frame by JS */
+  html.mode-scroll .slide {
+    position: absolute !important;
+    top: 0; left: 0;
+    width: 1600px !important;
+    height: 900px !important;
+    inset: auto;
+    display: flex !important;
+    flex-direction: column;
+    transform-origin: top left;
+    animation: none;
+    padding: 36px 60px 32px;
+    border-bottom: none;
+  }
+  html.mode-scroll .slide-body { flex: 1; min-height: 0; }
+  html.mode-scroll .overview { display: none !important; }
+  html.mode-scroll .title-slide .start { display: none; }
+  html.mode-scroll .topbar .progress,
+  html.mode-scroll .topbar .counter { display: none; }
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage">
+<div class="canvas" id="canvas">
+
+<header class="topbar">
+  <svg class="vast-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" aria-label="VAST Data">
+    <path fill="#FFFFFF" d="m20.9 15.7h15.1c2.6 0.2 4.8-1.5 5.1-4.1 0.3-4.6-0.5-9.7-4.2-9.7h-29.8c-3.6 0-7.1 3.8-5.2 8.7 0.5 1.2 23.4 38.5 27.4 44.4 1.3 1.7 3.3 2.8 5.9 1.6 1.4-0.9 4.8-3 5.5-3.9 1.1-1.3 1.6-2.8 0.5-4.7-1.3-2.2-14.6-23.6-20.3-32.3z"/>
+    <path fill="#1AB7EB" d="m112.6 1.9h-56c-2.8 0-4.5 2.2-4.5 5.9-0.2 3.3 0.1 7.8 4.5 7.9h42.2l-7.6 11.1c-1.2 1.9-0.8 4.1 1 5.6 4.6 3.1 7.7 5.7 10.8 2.1l14.6-23.2c2.2-3.2 0-8.9-5-9.4z"/>
+    <path fill="#FFFFFF" d="m86.7 42c-1.6-0.5-3.9-0.7-5.9 1.7l-21.7 33.7-7.4-12.7c-1.3-2-3.3-3.1-5.3-2.1-1.3 0.5-3.9 2.1-5.5 3.2-1.9 1.4-2.4 3.3-1.5 5.7l14.5 23.6c2.7 4.1 7.8 4.1 9.8 0.8l28.7-44.9c1.1-1.7 1-4.5-1.1-5.8-1.5-1.1-3.5-2.6-4.6-3.2z"/>
+  </svg>
+  <span class="crumb">VAST &amp; AI</span>
+  <div class="mode-toggle" id="mode-toggle" title="Switch view mode">
+    <button data-mode="present">Present</button>
+    <button data-mode="scroll" class="on">Scroll</button>
+  </div>
+  <div class="spacer"></div>
+  <div class="progress"><div id="progress-bar"></div></div>
+  <span class="counter" id="counter">1 / 8</span>
+</header>
+
+<main class="deck" id="deck">
+
+
+  <!-- ============================================================ -->
+  <!-- SLIDE 1 — TITLE -->
+  <!-- ============================================================ -->
+  <section class="slide on title-slide" data-slide="0">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" style="height:88px; width:auto; display:block; margin: 0 auto 36px;" aria-label="VAST Data">
+      <path fill="#FFFFFF" d="m20.9 15.7h15.1c2.6 0.2 4.8-1.5 5.1-4.1 0.3-4.6-0.5-9.7-4.2-9.7h-29.8c-3.6 0-7.1 3.8-5.2 8.7 0.5 1.2 23.4 38.5 27.4 44.4 1.3 1.7 3.3 2.8 5.9 1.6 1.4-0.9 4.8-3 5.5-3.9 1.1-1.3 1.6-2.8 0.5-4.7-1.3-2.2-14.6-23.6-20.3-32.3z"/>
+      <path fill="#1AB7EB" d="m112.6 1.9h-56c-2.8 0-4.5 2.2-4.5 5.9-0.2 3.3 0.1 7.8 4.5 7.9h42.2l-7.6 11.1c-1.2 1.9-0.8 4.1 1 5.6 4.6 3.1 7.7 5.7 10.8 2.1l14.6-23.2c2.2-3.2 0-8.9-5-9.4z"/>
+      <path fill="#FFFFFF" d="m86.7 42c-1.6-0.5-3.9-0.7-5.9 1.7l-21.7 33.7-7.4-12.7c-1.3-2-3.3-3.1-5.3-2.1-1.3 0.5-3.9 2.1-5.5 3.2-1.9 1.4-2.4 3.3-1.5 5.7l14.5 23.6c2.7 4.1 7.8 4.1 9.8 0.8l28.7-44.9c1.1-1.7 1-4.5-1.1-5.8-1.5-1.1-3.5-2.6-4.6-3.2z"/>
+    </svg>
+    <div class="accent-bar"></div>
+    <div class="slide-eyebrow">Enterprise data for AI workloads</div>
+    <h1><span class="highlight">VAST</span> &amp; <span class="highlight">AI</span><br/>
+    One platform for the whole<br/>AI data lifecycle.</h1>
+    <p class="lede">
+      Training reads enormous datasets. Inference shuffles cache, weights, and embeddings. Retrieval hits billions of small objects with sub-ms latency. Most storage architectures are tuned for exactly one of those. <strong>VAST</strong> runs all of them on the same fabric, the same data, the same namespace.
+    </p>
+    <div class="byline">by <span class="byline-name">Wong Tran</span></div>
+    <div class="start">Press <kbd>&rarr;</kbd> to begin &middot; <kbd>O</kbd> for overview &middot; <kbd>F</kbd> for fullscreen</div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SLIDE 2 — The crunch -->
+  <!-- ============================================================ -->
+  <section class="slide" data-slide="1">
+    <div class="slide-head">
+      <div class="accent-bar"></div>
+      <div class="slide-eyebrow">01 &middot; The crunch</div>
+      <h2 class="slide-title">AI workloads stress storage in three different ways</h2>
+      <p class="slide-sub">Each phase of the AI lifecycle wants something different from your storage. Build for one, and the others suffer.</p>
+    </div>
+    <div class="slide-body">
+      <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:18px; flex:1; min-height:0;">
+        <div class="panel" style="display:flex; flex-direction:column;">
+          <span class="pill" style="align-self:flex-start; margin-bottom:14px;">TRAINING</span>
+          <h3 style="font-size:22px; margin: 0 0 12px;">Massive parallel reads</h3>
+          <ul class="checklist">
+            <li>TBs of dataset shuffled across thousands of GPUs every epoch</li>
+            <li><strong>Checkpoint storms</strong> &mdash; every node writes a fragment of model state at once</li>
+            <li>One slow read stalls the whole step</li>
+          </ul>
+        </div>
+        <div class="panel" style="display:flex; flex-direction:column;">
+          <span class="pill" style="align-self:flex-start; margin-bottom:14px;">INFERENCE</span>
+          <h3 style="font-size:22px; margin: 0 0 12px;">Latency-critical reads</h3>
+          <ul class="checklist">
+            <li>Cold start: 100s of GB of weights into HBM in seconds</li>
+            <li>KV cache offload &mdash; sub-ms reads of historical attention state</li>
+            <li>One stall and TTFT spikes for the user</li>
+          </ul>
+        </div>
+        <div class="panel" style="display:flex; flex-direction:column;">
+          <span class="pill" style="align-self:flex-start; margin-bottom:14px;">RETRIEVAL &middot; RAG</span>
+          <h3 style="font-size:22px; margin: 0 0 12px;">Many tiny random reads</h3>
+          <ul class="checklist">
+            <li>Billions of small objects (vector embeddings, chunked docs)</li>
+            <li>Per query: dozens to thousands of point lookups</li>
+            <li>Tail latency, not throughput, is the SLO</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout" style="flex:0 0 auto;">
+        <strong>Traditional storage forces a tradeoff</strong> &mdash; fast for one workload pattern, slow for the others. VAST runs all three on the same hardware, the same namespace.
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SLIDE 3 — Architecture -->
+  <!-- ============================================================ -->
+  <section class="slide" data-slide="2">
+    <div class="slide-head">
+      <div class="accent-bar"></div>
+      <div class="slide-eyebrow">02 &middot; The architecture</div>
+      <h2 class="slide-title">DASE &mdash; Disaggregated Shared-Everything</h2>
+      <p class="slide-sub">Compute scales independently from storage. Every CNode sees every byte. The whole cluster looks like one disk.</p>
+    </div>
+    <div class="slide-body">
+      <div class="grid-2">
+        <div class="panel bare" style="display:flex; flex-direction:column;">
+          <h3 class="section-h">The architecture</h3>
+          <svg id="dase-svg" viewBox="0 0 720 460" preserveAspectRatio="xMidYMid meet" style="flex:1; min-height:0; margin-top:8px;"></svg>
+        </div>
+        <div class="stack">
+          <div class="panel">
+            <h3 class="section-h" style="font-size:16px; color:var(--vast-cyan);">CNodes &middot; stateless compute</h3>
+            <ul class="checklist">
+              <li>All metadata + protocol logic; no state of their own</li>
+              <li>Add capacity by adding boxes &mdash; they all see the same pool</li>
+              <li>Failover is instant: another CNode takes over</li>
+            </ul>
+          </div>
+          <div class="panel">
+            <h3 class="section-h" style="font-size:16px; color:var(--vast-cyan);">DBoxes &middot; shared NVMe + SCM</h3>
+            <ul class="checklist">
+              <li>All-NVMe (QLC for capacity) + Storage Class Memory write buffer</li>
+              <li>Connected to every CNode over RDMA fabric &mdash; no shard ownership</li>
+              <li>One namespace, multi-protocol (NFS &middot; SMB &middot; S3 &middot; NFSoRDMA)</li>
+            </ul>
+          </div>
+          <div class="callout">
+            <strong>Single namespace</strong> means: training data, checkpoints, KV cache, vector index, and inference artifacts all live in <em>the same place</em> &mdash; no copies, no rsync, no migration window when you move between phases.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SLIDE 4 — Lifecycle -->
+  <!-- ============================================================ -->
+  <section class="slide" data-slide="3">
+    <div class="slide-head">
+      <div class="accent-bar"></div>
+      <div class="slide-eyebrow">03 &middot; The lifecycle</div>
+      <h2 class="slide-title">Same data, six stages</h2>
+      <p class="slide-sub">From raw ingest to retired model &mdash; every stage hits storage differently. VAST exposes one namespace; the workload picks the protocol.</p>
+    </div>
+    <div class="slide-body">
+      <div class="panel bare" style="display:flex; flex-direction:column; gap:14px; flex:1; min-height:0;">
+        <svg id="lifecycle-svg" viewBox="0 0 1300 200" preserveAspectRatio="xMidYMid meet" style="width:100%; flex:0 0 auto;"></svg>
+        <div style="display:grid; grid-template-columns: repeat(6, 1fr); gap:12px; font-size:12px; line-height:1.45; flex:1; min-height:0;">
+          <div class="panel" style="padding:14px 16px;">
+            <span style="color:var(--vast-cyan); font-family:var(--fontmono); font-size:10px; letter-spacing:.14em; font-weight:700;">INGEST</span>
+            <p style="margin:6px 0 0;">Petabytes from data lakes, sensors, logs, vendor feeds. S3, NFS, parallel writes.</p>
+          </div>
+          <div class="panel" style="padding:14px 16px;">
+            <span style="color:var(--vast-cyan); font-family:var(--fontmono); font-size:10px; letter-spacing:.14em; font-weight:700;">CURATE</span>
+            <p style="margin:6px 0 0;">Clean, dedupe, label. Data scientists hit the same files via NFS / S3 &mdash; no ETL.</p>
+          </div>
+          <div class="panel" style="padding:14px 16px;">
+            <span style="color:var(--vast-cyan); font-family:var(--fontmono); font-size:10px; letter-spacing:.14em; font-weight:700;">TRAIN</span>
+            <p style="margin:6px 0 0;">Massive parallel reads to GPUs over NFSoRDMA / GPUDirect. Checkpoints land on the same pool.</p>
+          </div>
+          <div class="panel" style="padding:14px 16px;">
+            <span style="color:var(--vast-cyan); font-family:var(--fontmono); font-size:10px; letter-spacing:.14em; font-weight:700;">TUNE</span>
+            <p style="margin:6px 0 0;">Fine-tune from a checkpoint that's already on the cluster. Versions sit side-by-side.</p>
+          </div>
+          <div class="panel" style="padding:14px 16px;">
+            <span style="color:var(--vast-cyan); font-family:var(--fontmono); font-size:10px; letter-spacing:.14em; font-weight:700;">SERVE</span>
+            <p style="margin:6px 0 0;">Load weights into HBM. Offload KV cache. Serve a vector index. All from one namespace.</p>
+          </div>
+          <div class="panel" style="padding:14px 16px;">
+            <span style="color:var(--vast-cyan); font-family:var(--fontmono); font-size:10px; letter-spacing:.14em; font-weight:700;">ARCHIVE</span>
+            <p style="margin:6px 0 0;">Demote to cold capacity (still in the same namespace). Retain for compliance.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SLIDE 5 — Training -->
+  <!-- ============================================================ -->
+  <section class="slide" data-slide="4">
+    <div class="slide-head">
+      <div class="accent-bar"></div>
+      <div class="slide-eyebrow">04 &middot; Training</div>
+      <h2 class="slide-title">Training: feeding GPUs and surviving checkpoint storms</h2>
+      <p class="slide-sub">Two opposite IO patterns hit the same storage at the same time &mdash; fast random reads from every GPU, and synchronized bulk writes from every node.</p>
+    </div>
+    <div class="slide-body">
+      <div class="grid-2">
+        <div class="panel">
+          <h3 class="section-h" style="font-size:13px;">Read path &middot; dataset shuffle</h3>
+          <h3 style="font-size:24px; margin: 6px 0 14px;">Every step, every GPU</h3>
+          <ul class="checklist">
+            <li>Distributed shuffle: each GPU reads a different slice every epoch &mdash; no warm cache</li>
+            <li><strong>NFSoRDMA / GPUDirect Storage</strong> drop CPU staging entirely</li>
+            <li>VAST aggregates TB/s read throughput across the GPU fleet</li>
+            <li>Slow tail-latency reads stall the whole iteration &mdash; NVMe + SCM keeps p99 tight</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3 class="section-h" style="font-size:13px;">Write path &middot; checkpoint storms</h3>
+          <h3 style="font-size:24px; margin: 6px 0 14px;">Every node, all at once</h3>
+          <ul class="checklist">
+            <li><strong>Distributed checkpoints</strong>: every rank writes a shard simultaneously</li>
+            <li>A 70B-class model: hundreds of GB written in one sync window</li>
+            <li>Concurrent ingest from thousands of nodes &mdash; no shard ownership to serialize on</li>
+            <li>Versioned snapshots make rollback and divergence-debugging trivial</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout" style="flex:0 0 auto;">
+        Training spends GPU-seconds waiting for storage. Stalls compound across thousands of GPUs. VAST removes the tail because every CNode and every NVMe device is reachable from every GPU with predictable &micro;s latency.
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SLIDE 6 — Inference -->
+  <!-- ============================================================ -->
+  <section class="slide" data-slide="5">
+    <div class="slide-head">
+      <div class="accent-bar"></div>
+      <div class="slide-eyebrow">05 &middot; Inference</div>
+      <h2 class="slide-title">Inference: the read path is everything</h2>
+      <p class="slide-sub">Three different reads share the same namespace &mdash; model weights, KV cache, and the vector store. Every one of them is on the critical path for time-to-first-token.</p>
+    </div>
+    <div class="slide-body">
+      <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:18px; flex:1; min-height:0;">
+        <div class="panel" style="display:flex; flex-direction:column;">
+          <span class="pill" style="align-self:flex-start; margin-bottom:10px;">MODEL WEIGHTS</span>
+          <h3 style="font-size:20px; margin: 6px 0 12px;">Cold start &amp; hot reload</h3>
+          <ul class="checklist">
+            <li>Hundreds of GB into HBM on cold start; seconds matter for autoscale</li>
+            <li>One artifact, one namespace &mdash; no per-node copies to invalidate</li>
+            <li>Hot-swap to a tuned variant without redistributing</li>
+          </ul>
+        </div>
+        <div class="panel" style="display:flex; flex-direction:column;">
+          <span class="pill" style="align-self:flex-start; margin-bottom:10px;">KV CACHE</span>
+          <h3 style="font-size:20px; margin: 6px 0 12px;">Offload &amp; reuse</h3>
+          <ul class="checklist">
+            <li>Long-context KV is too big to keep in HBM &mdash; offload to NVMe / object</li>
+            <li>Hash-keyed blocks = reuse across requests with shared prefixes</li>
+            <li>VAST is the storage substrate for LMCache + NIXL</li>
+          </ul>
+          <a class="btn-ghost" href="lmcache-nixl-explainer.html" target="_blank" rel="noopener" style="margin-top:14px; align-self:flex-start; text-decoration:none;">&rarr; See the LMCache + NIXL deck</a>
+        </div>
+        <div class="panel" style="display:flex; flex-direction:column;">
+          <span class="pill" style="align-self:flex-start; margin-bottom:10px;">VECTOR &middot; RAG</span>
+          <h3 style="font-size:20px; margin: 6px 0 12px;">Billions of small reads</h3>
+          <ul class="checklist">
+            <li>Vector index sits on the same pool as everything else</li>
+            <li>Sub-ms point reads at billions-of-vector scale</li>
+            <li>Source documents stay alongside the embeddings &mdash; no separate object store</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout" style="flex:0 0 auto;">
+        Every inference read is a tail-latency story. Whatever's slowest <em>is</em> your TTFT. VAST puts all three reads on the same low-latency, RDMA-attached pool &mdash; no protocol gymnastics, no inter-tier copies.
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SLIDE 7 — Why VAST -->
+  <!-- ============================================================ -->
+  <section class="slide" data-slide="6">
+    <div class="slide-head">
+      <div class="accent-bar"></div>
+      <div class="slide-eyebrow">06 &middot; Why VAST</div>
+      <h2 class="slide-title">Why VAST for AI</h2>
+      <p class="slide-sub">Six attributes that, together, make one storage platform viable across the whole AI lifecycle.</p>
+    </div>
+    <div class="slide-body">
+      <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:18px; flex:1; min-height:0;">
+        <div class="panel">
+          <span style="color:var(--vast-cyan); font-family:var(--fontmono); font-size:11px; letter-spacing:.14em; font-weight:700;">SINGLE NAMESPACE</span>
+          <h3 style="font-size:20px; margin:6px 0 10px;">No copies between phases</h3>
+          <p style="font-size:13px; color:var(--vast-silver); line-height:1.5; margin:0;">Training data, checkpoints, KV cache, vectors, archives &mdash; same paths, same permissions. No rsync, no S3-to-NFS migration window.</p>
+        </div>
+        <div class="panel">
+          <span style="color:var(--vast-cyan); font-family:var(--fontmono); font-size:11px; letter-spacing:.14em; font-weight:700;">ALL-NVMe + SCM</span>
+          <h3 style="font-size:20px; margin:6px 0 10px;">Predictable &micro;s latency</h3>
+          <p style="font-size:13px; color:var(--vast-silver); line-height:1.5; margin:0;">No spinning disks. QLC for capacity, Storage Class Memory as the always-fast write tier. p99 stays close to p50.</p>
+        </div>
+        <div class="panel">
+          <span style="color:var(--vast-cyan); font-family:var(--fontmono); font-size:11px; letter-spacing:.14em; font-weight:700;">RDMA THROUGHOUT</span>
+          <h3 style="font-size:20px; margin:6px 0 10px;">Zero CPU on the data path</h3>
+          <p style="font-size:13px; color:var(--vast-silver); line-height:1.5; margin:0;">NFSoRDMA, GPUDirect Storage, S3-over-RDMA. Bytes go straight between NIC and GPU/NVMe &mdash; the host CPU is out of the way.</p>
+        </div>
+        <div class="panel">
+          <span style="color:var(--vast-cyan); font-family:var(--fontmono); font-size:11px; letter-spacing:.14em; font-weight:700;">MULTI-PROTOCOL</span>
+          <h3 style="font-size:20px; margin:6px 0 10px;">NFS &middot; SMB &middot; S3 &mdash; same data</h3>
+          <p style="font-size:13px; color:var(--vast-silver); line-height:1.5; margin:0;">Data engineers use S3, ML pipelines use NFS, Windows analysts use SMB &mdash; all on the same files, no extra layer.</p>
+        </div>
+        <div class="panel">
+          <span style="color:var(--vast-cyan); font-family:var(--fontmono); font-size:11px; letter-spacing:.14em; font-weight:700;">LINEAR SCALE</span>
+          <h3 style="font-size:20px; margin:6px 0 10px;">Exabyte capacity, TB/s throughput</h3>
+          <p style="font-size:13px; color:var(--vast-silver); line-height:1.5; margin:0;">Add CNodes for compute, DBoxes for capacity, independently. The architecture doesn't impose a "balance the racks" tax.</p>
+        </div>
+        <div class="panel">
+          <span style="color:var(--vast-cyan); font-family:var(--fontmono); font-size:11px; letter-spacing:.14em; font-weight:700;">ONE PLATFORM</span>
+          <h3 style="font-size:20px; margin:6px 0 10px;">Whole AI lifecycle</h3>
+          <p style="font-size:13px; color:var(--vast-silver); line-height:1.5; margin:0;">Ingest, curate, train, tune, serve, archive &mdash; one fabric, one namespace, one operational model. No tier-of-tier-of-tier.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SLIDE 8 — Bottom line -->
+  <!-- ============================================================ -->
+  <section class="slide" data-slide="7">
+    <div class="slide-head">
+      <div class="accent-bar"></div>
+      <div class="slide-eyebrow">07 &middot; Bottom line</div>
+      <h2 class="slide-title">One platform. The whole AI lifecycle.</h2>
+    </div>
+    <div class="slide-body">
+      <div class="grid-2">
+        <div class="panel">
+          <ul class="checklist" style="font-size:18px;">
+            <li><strong>AI workloads have three storage profiles</strong> &mdash; training, inference, retrieval &mdash; and they conflict on traditional storage.</li>
+            <li><strong>DASE</strong> separates compute from capacity over an RDMA fabric so every CNode reaches every byte.</li>
+            <li><strong>One namespace, multi-protocol</strong> &mdash; the same data flows through ingest, training, serving, and archive without copies.</li>
+            <li><strong>VAST is the substrate</strong> AI tooling assumes: GPUDirect Storage, S3-over-RDMA, KV cache offload, vector indexes, distributed checkpoints.</li>
+          </ul>
+        </div>
+        <div class="panel" style="display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center;">
+          <div style="font-family:var(--fontmono); font-size:14px; color:var(--vast-cyan); letter-spacing:.2em; text-transform:uppercase; margin-bottom:20px; font-weight:600;">The shift</div>
+          <div style="font-family:var(--fonth); font-size:38px; line-height:1.25; max-width:32ch;">
+            AI data stops being a<br/><span style="color:var(--vast-bad)">tier-by-tier pipeline</span><br/>
+            and becomes a<br/><span style="color:var(--vast-cyan)">single platform</span>.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="navbar">
+  <div class="hint">
+    <kbd>←</kbd><kbd>→</kbd> navigate · <kbd>O</kbd> overview · <kbd>F</kbd> fullscreen · <kbd>Home</kbd> first · <kbd>End</kbd> last
+  </div>
+  <div class="dots" id="dots"></div>
+  <div class="nav-btns">
+    <button id="prev" title="Previous (←)">‹</button>
+    <button id="next" title="Next (→)">›</button>
+  </div>
+</footer>
+
+<!-- Overview mode -->
+<div class="overview" id="overview">
+  <h2>Slide overview</h2>
+  <div class="overview-grid" id="overview-grid"></div>
+</div>
+
+</div> <!-- /canvas -->
+</div> <!-- /stage -->
+
+<script>
+/* ==============================================================
+   Wrap each slide in a .slide-frame so scroll mode can give it
+   an aspect-ratio container that hosts the (scaled) design canvas.
+   In present mode .slide-frame is `display: contents` so it's
+   invisible to layout — slides remain absolute children of .deck.
+   ============================================================== */
+document.querySelectorAll('.slide').forEach(slide => {
+  const wrap = document.createElement('div');
+  wrap.className = 'slide-frame';
+  slide.parentNode.insertBefore(wrap, slide);
+  wrap.appendChild(slide);
+});
+
+/* ==============================================================
+   Mode switching — Present (canvas-scaled slides) vs Scroll (flowing page)
+   ============================================================== */
+function setMode(mode) {
+  if (mode !== 'present' && mode !== 'scroll') mode = 'present';
+  document.documentElement.className = `mode-${mode}`;
+  document.querySelectorAll('#mode-toggle button').forEach(b =>
+    b.classList.toggle('on', b.dataset.mode === mode));
+  try { localStorage.setItem('lmcache-mode', mode); } catch {}
+  fit();
+  if (mode === 'scroll') {
+    // Scroll to the currently-active slide so context is preserved when switching
+    const active = document.querySelector('.slide.on') || document.querySelector('.slide');
+    const frame = active ? active.closest('.slide-frame') : null;
+    if (frame) setTimeout(() => frame.scrollIntoView({ behavior: 'instant', block: 'start' }), 0);
+  } else {
+    // Switching back to present: clear per-slide transforms (canvas-level transform takes over)
+    document.querySelectorAll('.slide').forEach(s => { s.style.transform = ''; });
+  }
+}
+document.querySelectorAll('#mode-toggle button').forEach(btn => {
+  btn.addEventListener('click', () => setMode(btn.dataset.mode));
+});
+// Initial mode: URL ?mode=... wins, else localStorage, else present
+const _params = new URLSearchParams(location.search);
+const _initMode = _params.get('mode') ||
+  (() => { try { return localStorage.getItem('lmcache-mode'); } catch { return null; } })() ||
+  'scroll';
+
+/* ==============================================================
+   Canvas scaling
+   - Present mode: scale the whole 1600×900 canvas to the viewport.
+   - Scroll mode:  scale each slide independently to its frame width.
+   ============================================================== */
+const DESIGN_W = 1600, DESIGN_H = 900;
+function fitScale() {
+  const canvas = document.getElementById('canvas');
+  const stage = document.getElementById('stage');
+  const sw = stage.clientWidth, sh = stage.clientHeight;
+  const scale = Math.min(sw / DESIGN_W, sh / DESIGN_H);
+  canvas.style.transform = `scale(${scale})`;
+}
+function fitScroll() {
+  const frame = document.querySelector('.slide-frame');
+  if (!frame) return;
+  const w = frame.clientWidth;
+  const scale = Math.min(1, w / DESIGN_W);
+  document.querySelectorAll('.slide').forEach(s => {
+    s.style.transform = `scale(${scale})`;
+  });
+}
+function fit() {
+  if (document.documentElement.classList.contains('mode-scroll')) {
+    document.getElementById('canvas').style.transform = '';
+    fitScroll();
+  } else {
+    document.querySelectorAll('.slide').forEach(s => { s.style.transform = ''; });
+    fitScale();
+  }
+}
+window.addEventListener('resize', fit);
+window.addEventListener('load', fit);
+// Apply initial mode (this also calls fit for the right mode)
+setMode(_initMode);
+
+/* ==============================================================
+   Helpers
+   ============================================================== */
+const $  = (s,r=document) => r.querySelector(s);
+const $$ = (s,r=document) => Array.from(r.querySelectorAll(s));
+const fmtMs = (ms) => ms < 1 ? `${(ms*1000).toFixed(0)} µs`
+                    : ms < 1000 ? `${ms.toFixed(ms<10?1:0)} ms`
+                    : `${(ms/1000).toFixed(2)} s`;
+const fmtTok = (n) => n>=1000 ? `${(n/1000).toFixed(n>=10000?0:1)}k` : `${n}`;
+const escapeHtml = s => s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+
+const COEF = {
+  prefillLin: 0.012, prefillSq: 1.6e-6,
+  decodePerTok: (n) => 8 + 0.0015*n,
+  kvBytesPerTok: 0.5,
+};
+const prefillMs = (n) => COEF.prefillLin*n + COEF.prefillSq*n*n;
+
+/* ==============================================================
+   Slide navigation
+   ============================================================== */
+const SLIDE_TITLES = [
+  { num:'',    title:'Title',          desc:'VAST + AI intro' },
+  { num:'01',  title:'The crunch',     desc:'Three different storage profiles' },
+  { num:'02',  title:'Architecture',   desc:'DASE — Disaggregated Shared-Everything' },
+  { num:'03',  title:'Lifecycle',      desc:'Same data across six stages' },
+  { num:'04',  title:'Training',       desc:'Reads + checkpoint storms' },
+  { num:'05',  title:'Inference',      desc:'Weights · KV cache · vectors' },
+  { num:'06',  title:'Why VAST',       desc:'The six attributes' },
+  { num:'07',  title:'Bottom line',    desc:'Takeaways' },
+];
+const TOTAL = SLIDE_TITLES.length;
+let cur = 0;
+
+function go(n) {
+  if (n < 0 || n >= TOTAL) return;
+  cur = n;
+  $$('.slide').forEach(s => s.classList.toggle('on', +s.dataset.slide === cur));
+  $('#counter').textContent = `${cur+1} / ${TOTAL}`;
+  $('#progress-bar').style.width = `${((cur+1)/TOTAL)*100}%`;
+  $$('#dots .dot').forEach((d,i) => d.classList.toggle('on', i === cur));
+  $('#overview').classList.remove('on');
+}
+function next() { go(Math.min(cur+1, TOTAL-1)); }
+function prev() { go(Math.max(cur-1, 0)); }
+
+const dotsEl = $('#dots');
+for (let i=0;i<TOTAL;i++) {
+  const d = document.createElement('div');
+  d.className = 'dot' + (i===0?' on':'');
+  d.title = SLIDE_TITLES[i].title;
+  d.addEventListener('click', () => go(i));
+  dotsEl.appendChild(d);
+}
+const ovGrid = $('#overview-grid');
+SLIDE_TITLES.forEach((s, i) => {
+  const c = document.createElement('div');
+  c.className = 'overview-card';
+  c.innerHTML = `<div class="num">${s.num ? s.num + ' · ' : ''}slide ${i+1}</div>
+                 <div class="title">${s.title}</div>
+                 <div class="desc">${s.desc}</div>`;
+  c.addEventListener('click', () => go(i));
+  ovGrid.appendChild(c);
+});
+
+$('#prev').addEventListener('click', prev);
+$('#next').addEventListener('click', next);
+window.addEventListener('keydown', (e) => {
+  if (['TEXTAREA','INPUT'].includes(e.target.tagName)) return;
+  if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); next(); }
+  else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); prev(); }
+  else if (e.key === 'Home') { go(0); }
+  else if (e.key === 'End') { go(TOTAL-1); }
+  else if (e.key === 'o' || e.key === 'O') { $('#overview').classList.toggle('on'); }
+  else if (e.key === 'f' || e.key === 'F') {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+    else document.exitFullscreen();
+  }
+  else if (e.key === 'Escape') { $('#overview').classList.remove('on'); }
+});
+
+
+/* ==============================================================
+   DASE architecture diagram
+   ============================================================== */
+function drawDASE() {
+  const svg = $('#dase-svg');
+  if (!svg) return;
+  svg.innerHTML = `
+    <defs>
+      <marker id="dArr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+        <path d="M0,0 L10,5 L0,10 z" fill="#b8c5d4"/>
+      </marker>
+    </defs>
+
+    <!-- GPU clients at top -->
+    <g font-family="ui-monospace,monospace">
+      <rect x="60"  y="14" width="120" height="46" rx="6" fill="#142540" stroke="#234670" stroke-width="1.5"/>
+      <text x="120" y="34" text-anchor="middle" font-size="13" fill="#fff" font-weight="700">GPU node</text>
+      <text x="120" y="50" text-anchor="middle" font-size="11" fill="#b8c5d4">training / serving</text>
+
+      <rect x="200" y="14" width="120" height="46" rx="6" fill="#142540" stroke="#234670" stroke-width="1.5"/>
+      <text x="260" y="34" text-anchor="middle" font-size="13" fill="#fff" font-weight="700">GPU node</text>
+      <text x="260" y="50" text-anchor="middle" font-size="11" fill="#b8c5d4">data loader</text>
+
+      <rect x="340" y="14" width="120" height="46" rx="6" fill="#142540" stroke="#234670" stroke-width="1.5"/>
+      <text x="400" y="34" text-anchor="middle" font-size="13" fill="#fff" font-weight="700">CPU node</text>
+      <text x="400" y="50" text-anchor="middle" font-size="11" fill="#b8c5d4">analytics</text>
+
+      <rect x="480" y="14" width="120" height="46" rx="6" fill="#142540" stroke="#234670" stroke-width="1.5"/>
+      <text x="540" y="34" text-anchor="middle" font-size="13" fill="#fff" font-weight="700">App / RAG</text>
+      <text x="540" y="50" text-anchor="middle" font-size="11" fill="#b8c5d4">vector queries</text>
+    </g>
+
+    <!-- RDMA fabric pipe -->
+    <rect x="40"  y="92"  width="640" height="42" rx="6" fill="rgba(0,212,255,0.12)" stroke="#00d4ff" stroke-width="2" stroke-dasharray="6 3"/>
+    <text x="360" y="118" text-anchor="middle" font-size="14" fill="#00d4ff" font-family="ui-monospace,monospace" font-weight="800">RDMA fabric &middot; NFSoRDMA &middot; GPUDirect Storage &middot; S3-over-RDMA</text>
+
+    <!-- Connectors clients → fabric -->
+    <line x1="120" y1="60"  x2="120" y2="92"  stroke="#b8c5d4" stroke-width="1.4"/>
+    <line x1="260" y1="60"  x2="260" y2="92"  stroke="#b8c5d4" stroke-width="1.4"/>
+    <line x1="400" y1="60"  x2="400" y2="92"  stroke="#b8c5d4" stroke-width="1.4"/>
+    <line x1="540" y1="60"  x2="540" y2="92"  stroke="#b8c5d4" stroke-width="1.4"/>
+
+    <!-- CNode row -->
+    <g font-family="ui-monospace,monospace">
+      <rect x="60"  y="166" width="120" height="62" rx="6" fill="#1c3358" stroke="#00d4ff" stroke-width="2"/>
+      <text x="120" y="190" text-anchor="middle" font-size="14" fill="#00d4ff" font-weight="800">CNode</text>
+      <text x="120" y="210" text-anchor="middle" font-size="11" fill="#b8c5d4">stateless</text>
+
+      <rect x="200" y="166" width="120" height="62" rx="6" fill="#1c3358" stroke="#00d4ff" stroke-width="2"/>
+      <text x="260" y="190" text-anchor="middle" font-size="14" fill="#00d4ff" font-weight="800">CNode</text>
+      <text x="260" y="210" text-anchor="middle" font-size="11" fill="#b8c5d4">stateless</text>
+
+      <rect x="340" y="166" width="120" height="62" rx="6" fill="#1c3358" stroke="#00d4ff" stroke-width="2"/>
+      <text x="400" y="190" text-anchor="middle" font-size="14" fill="#00d4ff" font-weight="800">CNode</text>
+      <text x="400" y="210" text-anchor="middle" font-size="11" fill="#b8c5d4">stateless</text>
+
+      <rect x="480" y="166" width="120" height="62" rx="6" fill="#1c3358" stroke="#00d4ff" stroke-width="2"/>
+      <text x="540" y="190" text-anchor="middle" font-size="14" fill="#00d4ff" font-weight="800">CNode</text>
+      <text x="540" y="210" text-anchor="middle" font-size="11" fill="#b8c5d4">+N more</text>
+    </g>
+    <text x="660" y="200" font-size="10" fill="#b8c5d4" font-family="ui-monospace,monospace">scale out</text>
+
+    <!-- Connectors fabric → CNodes -->
+    <line x1="120" y1="134" x2="120" y2="166" stroke="#b8c5d4" stroke-width="1.4"/>
+    <line x1="260" y1="134" x2="260" y2="166" stroke="#b8c5d4" stroke-width="1.4"/>
+    <line x1="400" y1="134" x2="400" y2="166" stroke="#b8c5d4" stroke-width="1.4"/>
+    <line x1="540" y1="134" x2="540" y2="166" stroke="#b8c5d4" stroke-width="1.4"/>
+
+    <!-- All-to-all mesh: every CNode reaches every DBox (suggested by crossing lines) -->
+    <line x1="120" y1="228" x2="120" y2="260" stroke="#5eead4" stroke-width="1.2" opacity="0.55"/>
+    <line x1="120" y1="228" x2="260" y2="260" stroke="#5eead4" stroke-width="1.2" opacity="0.55"/>
+    <line x1="120" y1="228" x2="400" y2="260" stroke="#5eead4" stroke-width="1.2" opacity="0.55"/>
+    <line x1="260" y1="228" x2="120" y2="260" stroke="#5eead4" stroke-width="1.2" opacity="0.55"/>
+    <line x1="260" y1="228" x2="260" y2="260" stroke="#5eead4" stroke-width="1.2" opacity="0.55"/>
+    <line x1="260" y1="228" x2="400" y2="260" stroke="#5eead4" stroke-width="1.2" opacity="0.55"/>
+    <line x1="400" y1="228" x2="120" y2="260" stroke="#5eead4" stroke-width="1.2" opacity="0.55"/>
+    <line x1="400" y1="228" x2="260" y2="260" stroke="#5eead4" stroke-width="1.2" opacity="0.55"/>
+    <line x1="400" y1="228" x2="540" y2="260" stroke="#5eead4" stroke-width="1.2" opacity="0.55"/>
+    <line x1="540" y1="228" x2="260" y2="260" stroke="#5eead4" stroke-width="1.2" opacity="0.55"/>
+    <line x1="540" y1="228" x2="400" y2="260" stroke="#5eead4" stroke-width="1.2" opacity="0.55"/>
+    <line x1="540" y1="228" x2="540" y2="260" stroke="#5eead4" stroke-width="1.2" opacity="0.55"/>
+
+    <text x="660" y="244" font-size="10" fill="#5eead4" font-family="ui-monospace,monospace" font-style="italic">all-to-all</text>
+
+    <!-- DBox row -->
+    <g font-family="ui-monospace,monospace">
+      <rect x="60"  y="260" width="120" height="86" rx="6" fill="#1c3358" stroke="#5eead4" stroke-width="2"/>
+      <text x="120" y="284" text-anchor="middle" font-size="14" fill="#5eead4" font-weight="800">DBox</text>
+      <text x="120" y="306" text-anchor="middle" font-size="10" fill="#b8c5d4">QLC NVMe</text>
+      <text x="120" y="324" text-anchor="middle" font-size="10" fill="#b8c5d4">+ SCM buffer</text>
+
+      <rect x="200" y="260" width="120" height="86" rx="6" fill="#1c3358" stroke="#5eead4" stroke-width="2"/>
+      <text x="260" y="284" text-anchor="middle" font-size="14" fill="#5eead4" font-weight="800">DBox</text>
+      <text x="260" y="306" text-anchor="middle" font-size="10" fill="#b8c5d4">QLC NVMe</text>
+      <text x="260" y="324" text-anchor="middle" font-size="10" fill="#b8c5d4">+ SCM buffer</text>
+
+      <rect x="340" y="260" width="120" height="86" rx="6" fill="#1c3358" stroke="#5eead4" stroke-width="2"/>
+      <text x="400" y="284" text-anchor="middle" font-size="14" fill="#5eead4" font-weight="800">DBox</text>
+      <text x="400" y="306" text-anchor="middle" font-size="10" fill="#b8c5d4">QLC NVMe</text>
+      <text x="400" y="324" text-anchor="middle" font-size="10" fill="#b8c5d4">+ SCM buffer</text>
+
+      <rect x="480" y="260" width="120" height="86" rx="6" fill="#1c3358" stroke="#5eead4" stroke-width="2"/>
+      <text x="540" y="284" text-anchor="middle" font-size="14" fill="#5eead4" font-weight="800">DBox</text>
+      <text x="540" y="306" text-anchor="middle" font-size="10" fill="#b8c5d4">QLC NVMe</text>
+      <text x="540" y="324" text-anchor="middle" font-size="10" fill="#b8c5d4">+ SCM buffer</text>
+    </g>
+
+    <!-- Wraparound label: the shared pool -->
+    <rect x="48" y="252" width="564" height="102" rx="10" fill="none" stroke="#5eead4" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.7"/>
+    <text x="612" y="306" font-size="11" fill="#5eead4" font-family="ui-monospace,monospace" font-style="italic">shared</text>
+    <text x="612" y="320" font-size="11" fill="#5eead4" font-family="ui-monospace,monospace" font-style="italic">NVMe pool</text>
+
+    <!-- Bottom annotation: single namespace -->
+    <text x="360" y="392" text-anchor="middle" font-size="14" fill="#fff" font-family="ui-monospace,monospace" font-weight="700">single namespace &middot; multi-protocol &middot; one fabric</text>
+    <text x="360" y="414" text-anchor="middle" font-size="12" fill="#b8c5d4" font-family="ui-monospace,monospace">add CNodes for compute &middot; add DBoxes for capacity &middot; independently</text>
+
+    <!-- Side annotations -->
+    <text x="40" y="92" font-size="10" fill="#b8c5d4" font-family="ui-monospace,monospace" text-anchor="end" transform="rotate(-90 40 92)">CLIENTS</text>
+  `;
+}
+drawDASE();
+
+/* ==============================================================
+   Lifecycle pipeline arrow
+   ============================================================== */
+function drawLifecycle() {
+  const svg = $('#lifecycle-svg');
+  if (!svg) return;
+  const stages = ['INGEST','CURATE','TRAIN','TUNE','SERVE','ARCHIVE'];
+  const W = 1300, H = 200;
+  const padX = 24;
+  const arrowW = 20;
+  const N = stages.length;
+  const nodeW = (W - padX*2 - arrowW*(N-1)) / N;
+  const nodeH = 78;
+  const nodeY = 60;
+  let s = '';
+  // Title
+  s += `<text x="${W/2}" y="32" text-anchor="middle" font-size="14" fill="var(--vast-cyan)" font-family="ui-monospace,monospace" font-weight="700" letter-spacing="3">THE AI DATA LIFECYCLE &mdash; ONE NAMESPACE END TO END</text>`;
+  for (let i = 0; i < N; i++) {
+    const x = padX + i * (nodeW + arrowW);
+    s += `<rect x="${x}" y="${nodeY}" width="${nodeW}" height="${nodeH}" rx="8" fill="rgba(0,212,255,0.10)" stroke="#00d4ff" stroke-width="1.5"/>`;
+    s += `<text x="${x + nodeW/2}" y="${nodeY + nodeH/2 + 6}" text-anchor="middle" font-size="18" fill="#fff" font-family="ui-monospace,monospace" font-weight="800" letter-spacing="2">${stages[i]}</text>`;
+    if (i < N - 1) {
+      const ax = x + nodeW;
+      const ay = nodeY + nodeH/2;
+      s += `<line x1="${ax + 2}" y1="${ay}" x2="${ax + arrowW - 8}" y2="${ay}" stroke="#5eead4" stroke-width="2.5"/>`;
+      s += `<polygon points="${ax + arrowW - 2},${ay} ${ax + arrowW - 11},${ay-6} ${ax + arrowW - 11},${ay+6}" fill="#5eead4"/>`;
+    }
+  }
+  // Bottom annotation showing the underlying namespace
+  s += `<rect x="${padX}" y="${nodeY + nodeH + 20}" width="${W - padX*2}" height="36" rx="6" fill="rgba(94,234,212,0.08)" stroke="#5eead4" stroke-width="1.2" stroke-dasharray="5 3"/>`;
+  s += `<text x="${W/2}" y="${nodeY + nodeH + 44}" text-anchor="middle" font-size="13" fill="#5eead4" font-family="ui-monospace,monospace" font-weight="700">VAST namespace &middot; NFS / SMB / S3 / NFSoRDMA / GPUDirect</text>`;
+  svg.innerHTML = s;
+}
+drawLifecycle();
+
+/* YouTube section uses plain anchor links — no JS needed.
+   The iframe-embed approach was abandoned because sandboxed preview
+   contexts (file://, Claude Code preview panel) trigger Error 153
+   regardless of the embed URL configuration. */
+</script>
+</body>
+</html>
